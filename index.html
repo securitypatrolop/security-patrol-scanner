@@ -5,7 +5,7 @@
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Security Patrol QR Scanner</title>
-  <!-- v1.9.8.1 - Adaptive Full-Screen Scanner -->
+  <!-- v1.9.9.0 - Navigation-Safe Scanner -->
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
@@ -259,7 +259,6 @@
       box-shadow: none;
     }
 
-    .back-button,
     #retryButton {
       width: auto;
       min-height: 34px;
@@ -332,7 +331,6 @@
       }
 
       .camera-control,
-      .back-button,
       #retryButton {
         min-height: 30px;
         padding-top: 5px;
@@ -430,10 +428,6 @@
           TRY AGAIN
         </button>
 
-        <button class="back-button"
-                onclick="goBackToPatrol()">
-          BACK
-        </button>
       </div>
 
       <div class="small">
@@ -470,6 +464,10 @@
   document.getElementById('expectedName').textContent = expectedName;
 
   window.addEventListener('load', startScanner);
+
+  window.addEventListener('pagehide', function() {
+    stopScanner();
+  });
 
 
   function scannerVoiceSupported() {
@@ -995,10 +993,13 @@
     }
 
     // Fallback if opener communication is unavailable.
-    window.location.href =
+    // replace() avoids adding another stale Guard page to browser history.
+    window.location.replace(
       returnUrl +
       '?point=' +
-      encodeURIComponent(scannedPoint);
+      encodeURIComponent(scannedPoint) +
+      '&scannerReturn=1'
+    );
   }
 
 
@@ -1045,21 +1046,6 @@
     scanner = null;
     zoomCapability = null;
     updateCameraControls_();
-  }
-
-
-  async function goBackToPatrol() {
-    await stopScanner();
-
-    if (returnUrl && Number.isInteger(expected)) {
-      window.location.href =
-        returnUrl +
-        '?point=' +
-        encodeURIComponent(expected);
-      return;
-    }
-
-    history.back();
   }
 
 
