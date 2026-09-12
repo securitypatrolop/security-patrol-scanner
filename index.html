@@ -5,7 +5,7 @@
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Security Patrol QR Scanner</title>
-  <!-- v1.9.6.1 - Main Rear Camera Fix -->
+  <!-- v1.9.6.2 - Camera Lens Control & Memory -->
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
@@ -105,6 +105,31 @@
       line-height: 1.45;
     }
 
+    .camera-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .camera-control {
+      width: auto;
+      min-width: 52px;
+      margin-top: 0;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      color: #111827;
+      font-size: 15px;
+      box-shadow: none;
+    }
+
+    .camera-control:disabled {
+      opacity: .45;
+      cursor: default;
+    }
+
     .hidden { display: none; }
   </style>
 </head>
@@ -121,6 +146,26 @@
     </div>
 
     <div id="reader"></div>
+
+    <div id="cameraControls" class="camera-controls hidden">
+      <button id="switchCameraButton"
+              class="camera-control"
+              type="button"
+              title="Switch rear camera"
+              aria-label="Switch rear camera"
+              onclick="switchRearCamera_()">
+        📷
+      </button>
+
+      <button id="zoomButton"
+              class="camera-control"
+              type="button"
+              title="Change camera zoom"
+              aria-label="Change camera zoom"
+              onclick="toggleZoom_()">
+        1×
+      </button>
+    </div>
 
     <div id="message" class="message">
       Starting camera...
@@ -155,6 +200,15 @@
   let scanner = null;
   let scannerRunning = false;
   let detectionLocked = false;
+
+  const CAMERA_STORAGE_KEY = 'securityPatrolPreferredCameraId';
+  const ZOOM_STORAGE_KEY = 'securityPatrolPreferredZoom';
+
+  let availableRearCameras = [];
+  let activeRearCameraIndex = -1;
+  let activeCameraId = '';
+  let currentZoom = 1;
+  let zoomCapability = null;
 
   document.getElementById('expectedPoint').textContent =
     Number.isInteger(expected) ? 'POINT ' + expected : 'CHECKPOINT';
@@ -216,106 +270,350 @@
   }
 
 
-  async function getPreferredRearCamera_() {
+  async function loadRearCameras_() {
+    let cameras = [];
+
     try {
-      const cameras = await Html5Qrcode.getCameras();
-
-      if (!cameras || !cameras.length) {
-        return { facingMode: { exact: 'environment' } };
-      }
-
-      const ranked = cameras
-        .map(function(camera, index) {
-          const label = String(camera.label || '').toLowerCase();
-          let score = 0;
-
-          // Prefer a normal rear-facing camera.
-          if (/back|rear|environment/.test(label)) {
-            score += 100;
-          }
-
-          if (/main|primary|standard/.test(label)) {
-            score += 60;
-          }
-
-          // On many phones "wide" is the normal 1x camera.
-          if (/\bwide\b/.test(label) && !/ultra/.test(label)) {
-            score += 15;
-          }
-
-          // Avoid cameras that commonly cause the "zoomed out" appearance.
-          if (/ultra[\s-]?wide|ultrawide|0[\.,]5x?|macro|telephoto|depth/.test(label)) {
-            score -= 180;
-          }
-
-          // Never intentionally pick a selfie/front camera.
-          if (/front|selfie|user/.test(label)) {
-            score -= 250;
-          }
-
-          // When labels are generic, keep the device's natural ordering
-          // as a small tie-breaker. Main rear is commonly listed first.
-          score -= index;
-
-          return {
-            camera: camera,
-            score: score
-          };
-        })
-        .sort(function(a, b) {
-          return b.score - a.score;
-        });
-
-      const selected = ranked[0] && ranked[0].camera;
-
-      if (selected && selected.id) {
-        return { deviceId: { exact: selected.id } };
-      }
-
+      cameras = await Html5Qrcode.getCameras();
     } catch (ignored) {
-      // Fall back to browser rear-camera selection.
+      cameras = [];
+    }
+
+    const ranked = cameras
+      .map(function(camera, index) {
+        const label = String(camera.label || '').toLowerCase();
+        let score = 0;
+
+        if (/back|rear|environment/.test(label)) score += 100;
+        if (/main|primary|standard/.test(label)) score += 60;
+        if (/\bwide\b/.test(label) && !/ultra/.test(label)) score += 15;
+
+        if (/ultra[\s-]?wide|ultrawide|0[\.,]5x?|macro|telephoto|depth/.test(label)) {
+          score -= 180;
+        }
+
+        if (/front|selfie|user/.test(label)) {
+          score -= 250;
+        }
+
+        score -= index;
+
+        return {
+          camera: camera,
+          label: label,
+          score: score,
+          originalIndex: index
+        };
+      });
+
+    const rearCandidates = ranked.filter(function(item) {
+      return !/front|selfie|user/.test(item.label);
+    });
+
+    rearCandidates.sort(function(a, b) {
+      return b.score - a.score;
+    });
+
+    availableRearCameras = rearCandidates.map(function(item) {
+      return item.camera;
+    });
+
+    if (!availableRearCameras.length) {
+      availableRearCameras = cameras.slice();
+    }
+
+    return availableRearCameras;
+  }
+
+
+  function loadRememberedCameraId_() {
+    try {
+      return String(localStorage.getItem(CAMERA_STORAGE_KEY) || '');
+    } catch (ignored) {
+      return '';
+    }
+  }
+
+
+  function rememberCameraId_(cameraId) {
+    try {
+      if (cameraId) {
+        localStorage.setItem(CAMERA_STORAGE_KEY, cameraId);
+      }
+    } catch (ignored) {}
+  }
+
+
+  function loadRememberedZoom_() {
+    try {
+      const saved = Number(localStorage.getItem(ZOOM_STORAGE_KEY));
+      return Number.isFinite(saved) && saved > 0 ? saved : 1;
+    } catch (ignored) {
+      return 1;
+    }
+  }
+
+
+  function rememberZoom_(zoom) {
+    try {
+      localStorage.setItem(ZOOM_STORAGE_KEY, String(zoom));
+    } catch (ignored) {}
+  }
+
+
+  async function getPreferredRearCamera_() {
+    await loadRearCameras_();
+
+    if (!availableRearCameras.length) {
+      activeRearCameraIndex = -1;
+      activeCameraId = '';
+      return { facingMode: { exact: 'environment' } };
+    }
+
+    const rememberedId = loadRememberedCameraId_();
+    let selectedIndex = -1;
+
+    if (rememberedId) {
+      selectedIndex = availableRearCameras.findIndex(function(camera) {
+        return String(camera.id) === rememberedId;
+      });
+    }
+
+    if (selectedIndex < 0) {
+      selectedIndex = 0;
+    }
+
+    activeRearCameraIndex = selectedIndex;
+    activeCameraId = String(availableRearCameras[selectedIndex].id || '');
+
+    if (activeCameraId) {
+      return { deviceId: { exact: activeCameraId } };
     }
 
     return { facingMode: { exact: 'environment' } };
   }
 
 
-  async function resetCameraZoom_() {
+  async function readCameraZoomCapability_() {
+    zoomCapability = null;
+
     if (!scanner || !scannerRunning) {
       return;
     }
 
     try {
-      const capabilities =
-        scanner.getRunningTrackCapabilities();
-
-      const zoomCapability =
-        capabilities && capabilities.zoom;
-
+      const capabilities = scanner.getRunningTrackCapabilities();
       if (
-        !zoomCapability ||
-        typeof zoomCapability.min !== 'number' ||
-        typeof zoomCapability.max !== 'number'
+        capabilities &&
+        capabilities.zoom &&
+        typeof capabilities.zoom.min === 'number' &&
+        typeof capabilities.zoom.max === 'number'
       ) {
-        return;
+        zoomCapability = capabilities.zoom;
       }
+    } catch (ignored) {}
+  }
 
-      const targetZoom =
-        Math.min(
-          zoomCapability.max,
-          Math.max(zoomCapability.min, 1)
+
+  async function applyPreferredZoom_() {
+    await readCameraZoomCapability_();
+
+    if (!zoomCapability) {
+      currentZoom = 1;
+      updateCameraControls_();
+      return;
+    }
+
+    let desired = loadRememberedZoom_();
+
+    desired = Math.min(
+      zoomCapability.max,
+      Math.max(zoomCapability.min, desired)
+    );
+
+    currentZoom = desired;
+
+    try {
+      await scanner.applyVideoConstraints({
+        advanced: [{ zoom: desired }]
+      });
+    } catch (ignored) {}
+
+    updateCameraControls_();
+  }
+
+
+  async function toggleZoom_() {
+    if (!zoomCapability || !scannerRunning) {
+      return;
+    }
+
+    const canUseTwo =
+      zoomCapability.max >= 2 &&
+      zoomCapability.min <= 2;
+
+    let nextZoom;
+
+    if (canUseTwo) {
+      nextZoom = currentZoom >= 1.75 ? 1 : 2;
+    } else {
+      const midpoint =
+        Math.max(
+          zoomCapability.min,
+          Math.min(
+            zoomCapability.max,
+            (zoomCapability.min + zoomCapability.max) / 2
+          )
         );
 
+      nextZoom =
+        Math.abs(currentZoom - zoomCapability.min) < 0.05
+          ? midpoint
+          : zoomCapability.min;
+    }
+
+    nextZoom = Math.min(
+      zoomCapability.max,
+      Math.max(zoomCapability.min, nextZoom)
+    );
+
+    try {
       await scanner.applyVideoConstraints({
-        advanced: [
-          { zoom: targetZoom }
-        ]
+        advanced: [{ zoom: nextZoom }]
       });
 
-    } catch (ignored) {
-      // Some browsers expose no controllable zoom. Scanning can continue.
+      currentZoom = nextZoom;
+      rememberZoom_(nextZoom);
+      updateCameraControls_();
+
+    } catch (ignored) {}
+  }
+
+
+  async function switchRearCamera_() {
+    if (availableRearCameras.length <= 1) {
+      return;
+    }
+
+    const nextIndex =
+      activeRearCameraIndex < 0
+        ? 0
+        : (activeRearCameraIndex + 1) % availableRearCameras.length;
+
+    const nextCamera =
+      availableRearCameras[nextIndex];
+
+    const nextCameraId =
+      String(nextCamera && nextCamera.id || '');
+
+    if (!nextCameraId) {
+      return;
+    }
+
+    setMessage('Switching rear camera...', '');
+
+    await stopScanner();
+
+    activeRearCameraIndex = nextIndex;
+    activeCameraId = nextCameraId;
+    rememberCameraId_(nextCameraId);
+
+    await startScannerWithCamera_({
+      deviceId: { exact: nextCameraId }
+    });
+  }
+
+
+  function updateCameraControls_() {
+    const controls =
+      document.getElementById('cameraControls');
+
+    const switchButton =
+      document.getElementById('switchCameraButton');
+
+    const zoomButton =
+      document.getElementById('zoomButton');
+
+    if (!controls || !switchButton || !zoomButton) {
+      return;
+    }
+
+    const multipleRearCameras =
+      availableRearCameras.length > 1;
+
+    const zoomAvailable =
+      !!zoomCapability &&
+      zoomCapability.max > zoomCapability.min;
+
+    if (!multipleRearCameras && !zoomAvailable) {
+      controls.classList.add('hidden');
+      return;
+    }
+
+    controls.classList.remove('hidden');
+
+    switchButton.disabled = !multipleRearCameras;
+    switchButton.classList.toggle('hidden', !multipleRearCameras);
+
+    zoomButton.disabled = !zoomAvailable;
+    zoomButton.classList.toggle('hidden', !zoomAvailable);
+
+    if (zoomAvailable) {
+      const rounded =
+        Math.round(currentZoom * 10) / 10;
+
+      zoomButton.textContent =
+        String(rounded).replace(/\.0$/, '') + '×';
+
+      zoomButton.title =
+        'Camera zoom ' + zoomButton.textContent;
     }
   }
+
+
+  async function startScannerWithCamera_(cameraConfig) {
+    scanner = new Html5Qrcode('reader');
+    scannerRunning = true;
+
+    await scanner.start(
+      cameraConfig,
+      {
+        fps: 10,
+        qrbox: { width: 260, height: 260 }
+      },
+      onQrDetected,
+      function() {}
+    );
+
+    try {
+      const settings = scanner.getRunningTrackSettings();
+      if (settings && settings.deviceId) {
+        activeCameraId = String(settings.deviceId);
+
+        const matchedIndex =
+          availableRearCameras.findIndex(function(camera) {
+            return String(camera.id) === activeCameraId;
+          });
+
+        if (matchedIndex >= 0) {
+          activeRearCameraIndex = matchedIndex;
+        }
+
+        rememberCameraId_(activeCameraId);
+      }
+    } catch (ignored) {}
+
+    await applyPreferredZoom_();
+
+    setMessage(
+      'Camera ready. Point it at the physical checkpoint QR code.',
+      ''
+    );
+
+    speakScanner('Ready to scan.');
+  }
+
+
 
 
   async function startScanner() {
@@ -346,30 +644,8 @@
     setMessage('Opening rear camera...', '');
 
     try {
-      scanner = new Html5Qrcode('reader');
-      scannerRunning = true;
-
       const cameraConfig = await getPreferredRearCamera_();
-
-      await scanner.start(
-        cameraConfig,
-        {
-          fps: 10,
-          qrbox: { width: 260, height: 260 }
-        },
-        onQrDetected,
-        function() {}
-      );
-
-      await resetCameraZoom_();
-
-      setMessage(
-        'Camera ready. Point it at the physical checkpoint QR code.',
-        ''
-      );
-
-      // Speak only when the rear camera is genuinely ready to scan.
-      speakScanner('Ready to scan.');
+      await startScannerWithCamera_(cameraConfig);
 
     } catch (error) {
       scannerRunning = false;
@@ -481,6 +757,8 @@
 
     scannerRunning = false;
     scanner = null;
+    zoomCapability = null;
+    updateCameraControls_();
   }
 
 
