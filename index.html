@@ -5,186 +5,440 @@
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Security Patrol QR Scanner</title>
-  <!-- v1.9.6.3 - Unified Patrol Frontend Baseline; scanner behavior carried forward from v1.9.6.2 -->
+  <!-- v1.9.8.1 - Adaptive Full-Screen Scanner -->
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
     * { box-sizing: border-box; }
 
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --bg: #0f1720;
+      --panel: #17212b;
+      --text: #f8fafc;
+      --muted: #aeb8c4;
+      --line: rgba(255,255,255,.12);
+      --control: rgba(255,255,255,.12);
+    }
+
+    html,
     body {
+      width: 100%;
+      height: 100%;
       margin: 0;
-      background: #f5f7fa;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: var(--bg);
+    }
+
+    body {
       font-family: Arial, sans-serif;
-      color: #1f2937;
+      color: var(--text);
     }
 
     .page {
-      max-width: 620px;
-      min-height: 100vh;
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      max-width: 680px;
       margin: 0 auto;
-      padding: 24px 18px 40px;
+      padding:
+        calc(8px + var(--safe-top))
+        calc(10px + var(--safe-right))
+        calc(8px + var(--safe-bottom))
+        calc(10px + var(--safe-left));
+      overflow: hidden;
     }
 
     .card {
-      background: #fff;
-      border-radius: 16px;
-      padding: 26px 20px;
-      box-shadow: 0 4px 18px rgba(0,0,0,.08);
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(6px, 1.2vh, 10px);
+      background: var(--bg);
       text-align: center;
+      overflow: hidden;
+    }
+
+    .scanner-header {
+      flex: 0 0 auto;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 2px 2px 0;
+      text-align: left;
+    }
+
+    .header-copy {
+      min-width: 0;
     }
 
     .eyebrow {
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      color: #52606d;
+      font-size: clamp(9px, 1.5vh, 11px);
+      font-weight: 800;
+      letter-spacing: .9px;
+      color: #91a0af;
     }
 
     h1 {
-      margin: 10px 0 8px;
-      font-size: 28px;
+      margin: 2px 0 0;
+      font-size: clamp(13px, 2.4vh, 18px);
+      line-height: 1.05;
+      font-weight: 900;
+      letter-spacing: .15px;
+      white-space: nowrap;
     }
 
     .expected {
-      margin: 16px 0 20px;
-      padding: 16px;
-      border: 2px solid #1f2937;
-      border-radius: 12px;
+      flex: 0 0 auto;
+      min-width: 88px;
+      max-width: 48vw;
+      padding: clamp(5px, 1vh, 8px) 10px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--panel);
+      text-align: right;
+      overflow: hidden;
     }
 
     .expected .point {
-      font-size: 30px;
-      font-weight: 800;
+      font-size: clamp(15px, 2.8vh, 20px);
+      line-height: 1;
+      font-weight: 900;
+      white-space: nowrap;
     }
 
     .expected .name {
-      margin-top: 6px;
-      font-size: 18px;
+      margin-top: 3px;
+      font-size: clamp(9px, 1.6vh, 11px);
+      line-height: 1.15;
       font-weight: 700;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .camera-stage {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      overflow: hidden;
+      border-radius: clamp(12px, 2vh, 18px);
+      background: #000;
+      border: 1px solid rgba(255,255,255,.08);
     }
 
     #reader {
-      width: 100%;
-      margin-top: 14px;
-      overflow: hidden;
-      border-radius: 12px;
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      border: 0 !important;
+      border-radius: inherit;
+      background: #000;
+    }
+
+    #reader > div {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+    }
+
+    #reader video {
+      width: 100% !important;
+      height: 100% !important;
+      max-height: none !important;
+      object-fit: cover !important;
+      border-radius: inherit;
+    }
+
+    #reader canvas {
+      max-width: 100% !important;
+      max-height: 100% !important;
+    }
+
+    .scan-corners {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      width: min(64vw, 260px);
+      aspect-ratio: 1;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .scan-corners::before,
+    .scan-corners::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 18px;
+    }
+
+    .scan-corners::before {
+      border:
+        3px solid rgba(255,255,255,.92);
+      clip-path: polygon(
+        0 0, 24% 0, 24% 3px, 3px 3px, 3px 24%, 0 24%,
+        0 76%, 3px 76%, 3px calc(100% - 3px), 24% calc(100% - 3px), 24% 100%, 0 100%,
+        76% 100%, 76% calc(100% - 3px), calc(100% - 3px) calc(100% - 3px), calc(100% - 3px) 76%, 100% 76%,
+        100% 24%, calc(100% - 3px) 24%, calc(100% - 3px) 3px, 76% 3px, 76% 0
+      );
+    }
+
+    .scanner-footer {
+      flex: 0 0 auto;
+      min-height: 0;
+      display: grid;
+      gap: clamp(5px, 1vh, 8px);
     }
 
     .message {
-      margin-top: 18px;
-      font-size: 17px;
-      line-height: 1.5;
+      min-height: 16px;
+      margin: 0;
+      padding: 0 4px;
+      font-size: clamp(11px, 1.9vh, 14px);
+      line-height: 1.25;
+      font-weight: 700;
+      color: #d8e0e8;
     }
 
-    .ok { color: #166534; }
-    .warn { color: #92400e; }
-    .error { color: #b91c1c; }
+    .ok { color: #86efac; }
+    .warn { color: #fcd34d; }
+    .error { color: #fca5a5; }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 34px;
+    }
 
     button {
-      width: 100%;
-      margin-top: 16px;
-      padding: 14px;
       border: 0;
-      border-radius: 10px;
-      font-size: 17px;
-      font-weight: 700;
       cursor: pointer;
-      background: #1f2937;
-      color: white;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .secondary {
-      background: #6b7280;
-    }
-
-    .small {
-      margin-top: 16px;
-      color: #6b7280;
-      font-size: 13px;
-      line-height: 1.45;
+    button:disabled {
+      opacity: .42;
+      cursor: default;
     }
 
     .camera-controls {
       display: flex;
-      gap: 10px;
-      margin-top: 12px;
+      gap: 8px;
+      margin: 0;
       justify-content: center;
       align-items: center;
     }
 
     .camera-control {
       width: auto;
-      min-width: 52px;
-      margin-top: 0;
-      padding: 10px 14px;
+      min-width: 44px;
+      min-height: 34px;
+      margin: 0;
+      padding: 7px 11px;
       border-radius: 999px;
-      background: #e5e7eb;
-      color: #111827;
-      font-size: 15px;
+      background: var(--control);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
       box-shadow: none;
     }
 
-    .camera-control:disabled {
-      opacity: .45;
-      cursor: default;
+    .back-button,
+    #retryButton {
+      width: auto;
+      min-height: 34px;
+      margin: 0;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
     }
 
-    .hidden { display: none; }
+    .back-button {
+      background: transparent;
+      color: #c8d1da;
+      border: 1px solid var(--line);
+    }
+
+    #retryButton {
+      background: #e2e8f0;
+      color: #17212b;
+    }
+
+    .small {
+      margin: 0;
+      padding: 0 4px;
+      color: #8f9ba7;
+      font-size: clamp(8px, 1.4vh, 10px);
+      line-height: 1.2;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Short phones: preserve camera space first. */
+    @media (max-height: 720px) {
+      .page {
+        padding-top: calc(5px + var(--safe-top));
+        padding-bottom: calc(5px + var(--safe-bottom));
+      }
+
+      .card {
+        gap: 5px;
+      }
+
+      .eyebrow {
+        display: none;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 13px;
+      }
+
+      .expected {
+        padding: 5px 8px;
+      }
+
+      .expected .point {
+        font-size: 15px;
+      }
+
+      .expected .name {
+        font-size: 9px;
+      }
+
+      .small {
+        display: none;
+      }
+
+      .message {
+        font-size: 11px;
+      }
+
+      .camera-control,
+      .back-button,
+      #retryButton {
+        min-height: 30px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+      }
+    }
+
+    /* Very short phones: keep only the essentials. */
+    @media (max-height: 610px) {
+      .expected .name {
+        display: none;
+      }
+
+      .message {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .scan-corners {
+        width: min(52vh, 220px);
+      }
+    }
+
+    /* Landscape phones/tablets. */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .page {
+        max-width: none;
+        padding-left: calc(8px + var(--safe-left));
+        padding-right: calc(8px + var(--safe-right));
+      }
+
+      .scanner-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .expected {
+        max-width: 38vw;
+      }
+
+      .scan-corners {
+        width: min(52vh, 230px);
+      }
+    }
   </style>
 </head>
 
 <body>
 <div class="page">
   <div class="card">
-    <div class="eyebrow">SECURITY PATROL</div>
-    <h1>SCAN NEXT CHECKPOINT</h1>
+    <div class="scanner-header">
+      <div class="header-copy">
+        <div class="eyebrow">SECURITY PATROL</div>
+        <h1>SCAN CHECKPOINT</h1>
+      </div>
 
-    <div class="expected">
-      <div id="expectedPoint" class="point">POINT</div>
-      <div id="expectedName" class="name"></div>
+      <div class="expected">
+        <div id="expectedPoint" class="point">CHECKPOINT</div>
+        <div id="expectedName" class="name"></div>
+      </div>
     </div>
 
-    <div id="reader"></div>
-
-    <div id="cameraControls" class="camera-controls hidden">
-      <button id="switchCameraButton"
-              class="camera-control"
-              type="button"
-              title="Switch rear camera"
-              aria-label="Switch rear camera"
-              onclick="switchRearCamera_()">
-        📷
-      </button>
-
-      <button id="zoomButton"
-              class="camera-control"
-              type="button"
-              title="Change camera zoom"
-              aria-label="Change camera zoom"
-              onclick="toggleZoom_()">
-        1×
-      </button>
+    <div class="camera-stage">
+      <div id="reader"></div>
+      <div class="scan-corners" aria-hidden="true"></div>
     </div>
 
-    <div id="message" class="message">
-      Starting camera...
-    </div>
+    <div class="scanner-footer">
+      <div id="message" class="message">Starting camera...</div>
 
-    <button id="retryButton"
-            class="hidden"
-            onclick="startScanner()">
-      TRY CAMERA AGAIN
-    </button>
+      <div class="controls-row">
+        <div id="cameraControls" class="camera-controls hidden">
+          <button id="switchCameraButton"
+                  class="camera-control"
+                  type="button"
+                  title="Switch rear camera"
+                  aria-label="Switch rear camera"
+                  onclick="switchRearCamera_()">
+            📷
+          </button>
 
-    <button class="secondary"
-            onclick="goBackToPatrol()">
-      BACK TO PATROL
-    </button>
+          <button id="zoomButton"
+                  class="camera-control"
+                  type="button"
+                  title="Change camera zoom"
+                  aria-label="Change camera zoom"
+                  onclick="toggleZoom_()">
+            1×
+          </button>
+        </div>
 
-    <div class="small">
-      Camera access is required only to scan the physical checkpoint QR.
-      GPS verification still occurs on the patrol page after scanning.
+        <button id="retryButton"
+                class="hidden"
+                onclick="startScanner()">
+          TRY AGAIN
+        </button>
+
+        <button class="back-button"
+                onclick="goBackToPatrol()">
+          BACK
+        </button>
+      </div>
+
+      <div class="small">
+        Scan the physical checkpoint QR. GPS verification happens on the patrol page.
+      </div>
     </div>
   </div>
 </div>
@@ -211,7 +465,7 @@
   let zoomCapability = null;
 
   document.getElementById('expectedPoint').textContent =
-    Number.isInteger(expected) ? 'POINT ' + expected : 'CHECKPOINT';
+    Number.isInteger(expected) ? 'CHECKPOINT ' + expected : 'CHECKPOINT';
 
   document.getElementById('expectedName').textContent = expectedName;
 
@@ -571,6 +825,38 @@
   }
 
 
+  function getAdaptiveQrBox_() {
+    const reader = document.getElementById('reader');
+
+    if (!reader) {
+      return { width: 220, height: 220 };
+    }
+
+    const rect = reader.getBoundingClientRect();
+    const available =
+      Math.max(
+        120,
+        Math.min(
+          Number(rect.width) || 320,
+          Number(rect.height) || 320
+        )
+      );
+
+    const side =
+      Math.floor(
+        Math.max(
+          120,
+          Math.min(260, available * 0.68)
+        )
+      );
+
+    return {
+      width: side,
+      height: side
+    };
+  }
+
+
   async function startScannerWithCamera_(cameraConfig) {
     scanner = new Html5Qrcode('reader');
     scannerRunning = true;
@@ -579,7 +865,7 @@
       cameraConfig,
       {
         fps: 10,
-        qrbox: { width: 260, height: 260 }
+        qrbox: getAdaptiveQrBox_()
       },
       onQrDetected,
       function() {}
@@ -606,7 +892,7 @@
     await applyPreferredZoom_();
 
     setMessage(
-      'Camera ready. Point it at the physical checkpoint QR code.',
+      'Ready to scan checkpoint QR.',
       ''
     );
 
@@ -641,7 +927,7 @@
     }
 
     document.getElementById('retryButton').classList.add('hidden');
-    setMessage('Opening rear camera...', '');
+    setMessage('Opening camera...', '');
 
     try {
       const cameraConfig = await getPreferredRearCamera_();
@@ -665,7 +951,7 @@
 
     if (!Number.isInteger(scannedPoint)) {
       setMessage(
-        'This is not a valid patrol checkpoint QR. Scan the checkpoint QR code.',
+        'Invalid patrol QR. Scan the checkpoint QR.',
         'warn'
       );
       return;
@@ -679,7 +965,7 @@
     detectionLocked = true;
 
     // Keep the Guard page alive. It owns GPS, server verification and voice.
-    setMessage('Checkpoint scanned. Returning to patrol...', 'ok');
+    setMessage('Checkpoint scanned. Returning...', 'ok');
 
     await stopScanner();
 
