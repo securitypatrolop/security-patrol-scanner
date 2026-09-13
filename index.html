@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v1.11.0 - Unified Security Patrol Scanner -->
+<!-- v1.11.1 - Centered Adaptive Scanner -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -386,7 +386,215 @@ html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:sy
 .scanner-footer{gap:8px;padding:10px 12px 12px;background:#fff}.message{min-height:20px;color:#49627a;font-size:clamp(12px,3vw,14px);font-weight:750}.ok{color:var(--soc-green)}.warn{color:#a86009}.error{color:var(--soc-red)}.camera-control{min-width:48px;min-height:40px;border:1px solid #c9d9e5;border-radius:10px;background:#eef5fa;color:#204765;font-size:13px}#retryButton{min-height:42px;padding:9px 16px;border-radius:10px;background:linear-gradient(180deg,#1595ec,#0875c8);color:#fff;font-size:13px;font-weight:900}.small{color:#7890a5;font-size:clamp(9px,2.3vw,11px)}
 @media(max-height:720px){.scanner-brandbar{min-height:56px}.scanner-brand-shield{width:30px;height:35px}.scanner-brand-name{font-size:15px}.scanner-context{padding:9px 12px 8px}.expected .point{font-size:clamp(31px,8vw,40px)}.camera-stage{margin-top:8px}.scanner-footer{padding-top:7px}}
 
-</style>
+
+    /* =========================================================
+       v1.11.1 - CENTERED ADAPTIVE SCANNER
+       ========================================================= */
+
+    /*
+      v1.11.0 inherited width:100% on camera-stage and then added
+      left/right margins. That made total rendered width exceed the card,
+      creating the off-center appearance seen on phone.
+
+      width:auto keeps the stage centered inside the available content width.
+    */
+    .camera-stage {
+      width: auto !important;
+      align-self: stretch;
+      margin:
+        clamp(
+          7px,
+          1.3dvh,
+          12px
+        )
+        clamp(
+          8px,
+          2.8vw,
+          12px
+        )
+        0;
+    }
+
+    #reader {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #reader > div {
+      margin:
+        0 auto !important;
+    }
+
+    #reader video {
+      object-position:
+        50% 50% !important;
+    }
+
+    /*
+      Remove the red laser line. The blue centered QR frame is sufficient and
+      gives a cleaner security-console appearance.
+    */
+    .scan-corners::after {
+      display: none !important;
+      content: none !important;
+      background: none !important;
+      box-shadow: none !important;
+    }
+
+    .scan-corners {
+      left: 50%;
+      top: 50%;
+      width:
+        min(
+          62vw,
+          248px
+        );
+      transform:
+        translate(
+          -50%,
+          -50%
+        );
+    }
+
+    /*
+      Preserve the all-in-one-screen scanner layout on both short and tall
+      phones. No vertical page scrolling.
+    */
+    .scanner-brandbar {
+      flex:
+        0 0 auto;
+    }
+
+    .scanner-context {
+      flex:
+        0 0 auto;
+    }
+
+    .camera-stage {
+      flex:
+        1 1 0;
+      min-height: 0;
+    }
+
+    .scanner-footer {
+      flex:
+        0 0 auto;
+    }
+
+    @media (max-height: 700px) {
+      .scanner-brandbar {
+        min-height: 50px;
+      }
+
+      .scanner-brand-shield {
+        width: 28px;
+        height: 33px;
+        font-size: 15px;
+      }
+
+      .scanner-brand-name {
+        font-size: 14px;
+      }
+
+      .scanner-context {
+        padding:
+          7px 10px 6px;
+      }
+
+      .scanner-context-label {
+        font-size: 9px;
+      }
+
+      .expected .point {
+        font-size:
+          clamp(
+            29px,
+            7.8vw,
+            36px
+          );
+      }
+
+      .expected .name {
+        margin-top: 2px;
+        font-size:
+          clamp(
+            11px,
+            3vw,
+            13px
+          );
+      }
+
+      .camera-stage {
+        margin:
+          6px 8px 0;
+        border-radius: 12px;
+      }
+
+      .scan-corners {
+        width:
+          min(
+            56vw,
+            210px
+          );
+      }
+
+      .scanner-footer {
+        gap: 4px;
+        padding:
+          6px 8px 7px;
+      }
+
+      .message {
+        min-height: 15px;
+        font-size:
+          clamp(
+            10px,
+            2.7vw,
+            12px
+          );
+      }
+
+      .camera-control {
+        min-width: 43px;
+        min-height: 36px;
+        font-size: 12px;
+      }
+
+      .small {
+        font-size: 8px;
+      }
+    }
+
+    @media (max-height: 610px) {
+      .small {
+        display: none;
+      }
+
+      .scanner-brandbar {
+        min-height: 45px;
+      }
+
+      .scanner-context {
+        padding:
+          5px 8px;
+      }
+
+      .expected .point {
+        font-size: 27px;
+      }
+
+      .camera-stage {
+        margin-top: 4px;
+      }
+
+      .scanner-footer {
+        padding:
+          4px 7px 5px;
+      }
+    }
+
+  </style>
 </head>
 
 <body>
