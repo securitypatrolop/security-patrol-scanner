@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2.0.0-alpha3 - Optically Centered Immersive Scanner -->
+<!-- 2.0.0.0alpha5 - Field Consistency Scanner -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -398,6 +398,62 @@
       }
     }
 
+    /* =========================================================
+       2.0.0.0alpha5 - FIELD CONSISTENCY SCANNER
+       - shared Security Patrol header matches Guard (no shield badge)
+       - header clock remains readable without crowding
+       - scan target moves upward while keeping the real html5-qrcode
+         scan region and custom corner guide optically synchronized
+       ========================================================= */
+
+    .scanner-brand-name {
+      font-size: 16px;
+    }
+
+    .scanner-clock {
+      max-width: 132px;
+      font-size: clamp(9px, 2.45vw, 11px);
+      line-height: 1.15;
+      font-weight: 800;
+    }
+
+    /*
+      html5-qrcode centers its qrbox inside #reader and does not expose a
+      vertical qrbox offset. To move the REAL scan region upward safely,
+      enlarge #reader below the clipped camera stage and shift its top upward.
+      A 120% reader beginning at -20% places its internal 50% center at 40%
+      of the visible stage. The custom guide uses that same 40% center.
+    */
+    #reader {
+      top: -20% !important;
+      bottom: 0 !important;
+      height: 120% !important;
+      min-height: 120% !important;
+    }
+
+    .scan-corners {
+      top: 40% !important;
+      left: 50% !important;
+      width: var(--scan-box-size-v200a3, min(64vw,260px)) !important;
+      max-width: 72vw;
+      transform: translate(-50%, -50%) !important;
+    }
+
+    @media (max-height:700px) {
+      .scanner-clock {
+        max-width: 112px;
+        font-size: clamp(8px, 2.2vw, 9.5px);
+      }
+    }
+
+    @media (max-width:380px) {
+      .scanner-clock {
+        max-width: 102px;
+        font-size: clamp(7.5px, 2.1vw, 9px);
+      }
+    }
+
+
   </style>
 </head>
 
@@ -406,7 +462,6 @@
   <div class="card">
     <div class="scanner-brandbar">
       <div class="scanner-brand">
-        <div class="scanner-brand-shield" aria-hidden="true"><span>✓</span></div>
         <div class="scanner-brand-name">SECURITY PATROL</div>
       </div>
       <div id="scannerClockV200a3" class="scanner-clock"></div>
