@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2.0.0-alpha1 - Immersive Scanner -->
+<!-- v2.0.0-alpha2 - Refined Immersive Scanner -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -13,7 +13,7 @@
   <style>
 
     /* =========================================================
-       SECURITY PATROL 2.0.0-alpha1
+       SECURITY PATROL 2.0.0-alpha2
        Immersive Scanner
        ========================================================= */
 
@@ -117,28 +117,39 @@
     }
 
     .scanner-context-label {
-      color:#9bc2db;
-      font-size:9px;
+      color:#a9cde4;
+      font-size:clamp(11px,3vw,13px);
       line-height:1;
-      font-weight:900;
-      letter-spacing:1px;
+      font-weight:950;
+      letter-spacing:1.15px;
     }
 
     .expected { margin:0; padding:0; background:transparent; border:0; text-align:center; }
     .expected .point {
-      margin-top:3px;
+      margin-top:5px;
       color:#fff;
-      font-size:clamp(35px,9.5vw,46px);
-      line-height:.98;
+      line-height:.95;
       font-weight:950;
       letter-spacing:-1.5px;
     }
-    .expected .name {
-      margin-top:4px;
-      color:#eaf5fc;
-      font-size:clamp(13px,3.6vw,16px);
-      line-height:1.15;
+    .expected .point-current {
+      font-size:clamp(43px,11.7vw,58px);
+      letter-spacing:-2px;
+    }
+    .expected .point-total {
+      margin-left:4px;
+      color:#bdd5e6;
+      font-size:clamp(25px,6.7vw,33px);
       font-weight:850;
+      letter-spacing:-.6px;
+      vertical-align:.16em;
+    }
+    .expected .name {
+      margin-top:6px;
+      color:#f0f8fd;
+      font-size:clamp(16px,4.4vw,20px);
+      line-height:1.12;
+      font-weight:900;
     }
 
     .camera-stage {
@@ -312,9 +323,10 @@
       .scanner-brand-shield { width:25px; height:30px; font-size:14px; }
       .scanner-brand-name { font-size:13px; }
       .scanner-context { padding:6px 9px 5px; }
-      .scanner-context-label { font-size:7.5px; }
-      .expected .point { font-size:clamp(29px,7.8vw,36px); }
-      .expected .name { margin-top:2px; font-size:clamp(11px,3vw,13px); }
+      .scanner-context-label { font-size:9px; }
+      .expected .point-current { font-size:clamp(32px,8.6vw,40px); }
+      .expected .point-total { font-size:clamp(19px,5vw,24px); }
+      .expected .name { margin-top:3px; font-size:clamp(13px,3.5vw,15px); }
       .scan-corners { width:min(56vw,215px); }
       .scanner-footer { min-height:96px; padding-top:26px; gap:4px; }
       .camera-control { min-width:52px; min-height:44px; border-radius:12px; font-size:13px; }
@@ -325,7 +337,8 @@
       .small { display:none; }
       .scanner-brandbar { min-height:44px; }
       .scanner-context { padding:4px 7px; }
-      .expected .point { font-size:27px; }
+      .expected .point-current { font-size:29px; }
+      .expected .point-total { font-size:18px; }
       .scan-corners { width:min(49vw,190px); }
       .scanner-footer { min-height:78px; padding-top:18px; }
       .camera-control { min-width:48px; min-height:40px; }
@@ -399,7 +412,7 @@
       </div>
 
       <div class="small">
-        Align QR code within the frame.
+        Keep the checkpoint QR inside the blue corners.
       </div>
     </div>
   </div>
@@ -449,10 +462,20 @@
   let scannerBackProtectionEnabledV1113 = true;
   let scannerBackToastTimerV1113 = null;
 
-  document.getElementById('expectedPoint').textContent =
-    Number.isInteger(expected)
-      ? (String(expected).padStart(2, '0') + ' / ' + String(totalCheckpoints).padStart(2, '0'))
-      : 'CHECKPOINT';
+  const expectedPointElement =
+    document.getElementById('expectedPoint');
+
+  if (Number.isInteger(expected)) {
+    expectedPointElement.innerHTML =
+      '<span class="point-current">' +
+      String(expected).padStart(2, '0') +
+      '</span>' +
+      '<span class="point-total">/ ' +
+      String(totalCheckpoints).padStart(2, '0') +
+      '</span>';
+  } else {
+    expectedPointElement.textContent = 'CHECKPOINT';
+  }
 
   document.getElementById('expectedName').textContent = expectedName || '';
 
@@ -589,16 +612,6 @@
       }
     } catch (ignored) {}
 
-    speakScanner(
-      Number.isInteger(expected)
-        ? (
-            'Scanner opened. Scan checkpoint ' +
-            expected +
-            '.'
-          )
-        : 'Scanner opened.'
-    );
-
     startScanner();
   }
 
@@ -616,14 +629,9 @@
 
     speakScanner(
       Number.isInteger(expected)
-        ? (
-            'Ready to scan checkpoint ' +
-            expected +
-            '.'
-          )
+        ? 'Scan checkpoint ' + expected + '.'
         : 'Ready to scan.'
-    );
-  }
+    );  }
 
 
   function speakScannerAndWaitV1107_(
@@ -866,6 +874,23 @@
   }
 
 
+  function getRunningVideoTrackV200a2_() {
+    try {
+      const video = document.querySelector('#reader video');
+      const stream = video && video.srcObject;
+
+      if (
+        stream &&
+        typeof stream.getVideoTracks === 'function'
+      ) {
+        return stream.getVideoTracks()[0] || null;
+      }
+    } catch (ignored) {}
+
+    return null;
+  }
+
+
   async function readCameraZoomCapability_() {
     zoomCapability = null;
     torchSupported = false;
@@ -875,36 +900,77 @@
       return;
     }
 
-    try {
-      const capabilities = scanner.getRunningTrackCapabilities();
-      if (
-        capabilities &&
-        capabilities.zoom &&
-        typeof capabilities.zoom.min === 'number' &&
-        typeof capabilities.zoom.max === 'number'
-      ) {
-        zoomCapability = capabilities.zoom;
-      }
+    let capabilities = null;
+    let settings = null;
+    const track = getRunningVideoTrackV200a2_();
 
+    try {
+      capabilities = scanner.getRunningTrackCapabilities();
+    } catch (ignored) {}
+
+    if (!capabilities && track && typeof track.getCapabilities === 'function') {
+      try {
+        capabilities = track.getCapabilities();
+      } catch (ignored) {}
+    }
+
+    if (
+      capabilities &&
+      capabilities.zoom &&
+      typeof capabilities.zoom.min === 'number' &&
+      typeof capabilities.zoom.max === 'number'
+    ) {
+      zoomCapability = capabilities.zoom;
+    }
+
+    if (capabilities) {
       if (
-        capabilities &&
+        capabilities.torch === true ||
+        Object.prototype.hasOwnProperty.call(capabilities, 'torch') ||
         (
-          capabilities.torch === true ||
-          (Array.isArray(capabilities.fillLightMode) && capabilities.fillLightMode.length > 0)
+          Array.isArray(capabilities.fillLightMode) &&
+          capabilities.fillLightMode.length > 0
         )
       ) {
         torchSupported = true;
       }
-    } catch (ignored) {}
+    }
 
     try {
-      const settings = scanner.getRunningTrackSettings();
-      if (settings && typeof settings.torch === 'boolean') {
-        torchEnabled = settings.torch;
-      }
+      settings = scanner.getRunningTrackSettings();
     } catch (ignored) {}
-  }
 
+    if (!settings && track && typeof track.getSettings === 'function') {
+      try {
+        settings = track.getSettings();
+      } catch (ignored) {}
+    }
+
+    if (settings && typeof settings.torch === 'boolean') {
+      torchEnabled = settings.torch;
+    }
+
+    // Some Android Chromium devices can apply torch even when the html5-qrcode
+    // capability wrapper omits it. Show the control optimistically only when
+    // the browser advertises torch constraints on a live rear camera track.
+    if (!torchSupported && track) {
+      try {
+        const supported = navigator.mediaDevices &&
+          navigator.mediaDevices.getSupportedConstraints
+          ? navigator.mediaDevices.getSupportedConstraints()
+          : {};
+
+        const facingMode = String(settings && settings.facingMode || '').toLowerCase();
+        const rearCamera =
+          facingMode === 'environment' ||
+          !!activeCameraId;
+
+        if (rearCamera && supported && supported.torch) {
+          torchSupported = true;
+        }
+      } catch (ignored) {}
+    }
+  }
 
   async function applyPreferredZoom_() {
     await readCameraZoomCapability_();
@@ -987,40 +1053,54 @@
     }
 
     const nextState = !torchEnabled;
+    const track = getRunningVideoTrackV200a2_();
+    let applied = false;
 
-    try {
-      await scanner.applyVideoConstraints({
-        advanced: [{ torch: nextState }]
-      });
+    if (track && typeof track.applyConstraints === 'function') {
+      try {
+        await track.applyConstraints({
+          advanced: [{ torch: nextState }]
+        });
+        applied = true;
+      } catch (ignored) {}
+    }
 
-      torchEnabled = nextState;
+    if (!applied) {
+      try {
+        await scanner.applyVideoConstraints({
+          advanced: [{ torch: nextState }]
+        });
+        applied = true;
+      } catch (ignored) {}
+    }
+
+    if (!applied) {
+      try {
+        await scanner.applyVideoConstraints({
+          advanced: [{ fillLightMode: nextState ? 'flash' : 'off' }]
+        });
+        applied = true;
+      } catch (ignored) {}
+    }
+
+    if (!applied) {
+      torchSupported = false;
+      torchEnabled = false;
       updateCameraControls_();
       setMessage(
-        nextState ? 'Flashlight enabled.' : 'Flashlight disabled.',
-        nextState ? 'ok' : ''
-      );
-      return;
-    } catch (ignored) {}
-
-    try {
-      await scanner.applyVideoConstraints({
-        advanced: [{ fillLightMode: nextState ? 'flash' : 'off' }]
-      });
-
-      torchEnabled = nextState;
-      updateCameraControls_();
-      setMessage(
-        nextState ? 'Flashlight enabled.' : 'Flashlight disabled.',
-        nextState ? 'ok' : ''
-      );
-    } catch (ignored) {
-      setMessage(
-        'Flashlight is not available on this phone or camera.',
+        'Flashlight is not available on this camera.',
         'warn'
       );
+      return;
     }
-  }
 
+    torchEnabled = nextState;
+    updateCameraControls_();
+    setMessage(
+      nextState ? 'Flashlight on.' : 'Flashlight off.',
+      nextState ? 'ok' : ''
+    );
+  }
 
   async function switchRearCamera_() {
     if (availableRearCameras.length <= 1) {
@@ -1302,10 +1382,10 @@
     detectionLocked = true;
     releaseScannerBackProtectionV1113_();
 
-    setMessage('Checkpoint scanned. Returning...', 'ok');
+    setMessage('Checkpoint captured. Returning...', 'ok');
 
     await speakScannerAndWaitV1107_(
-      'Checkpoint scanned.',
+      'Checkpoint captured.',
       1200
     );
 
