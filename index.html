@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+<!-- v1.11.0 - Unified Security Patrol Scanner -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Security Patrol QR Scanner</title>
+  <title>Security Patrol Scanner</title>
   <!-- v1.9.9.0 - Navigation-Safe Scanner -->
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -375,18 +376,31 @@
         width: min(52vh, 230px);
       }
     }
-  </style>
+  
+/* v1.11.0 unified scanner */
+:root{--soc-navy:#0b1c2f;--soc-blue:#1479c9;--soc-canvas:#eef5fa;--soc-panel:#fff;--soc-border:#d5e2ec;--soc-text:#102038;--soc-muted:#61748d;--soc-green:#16834d;--soc-red:#c52931}
+html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}.page{max-width:620px;padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);background:var(--soc-canvas)}.card{gap:0;background:var(--soc-panel)}
+.scanner-brandbar{flex:0 0 auto;min-height:70px;display:flex;align-items:center;padding:0 15px;background:linear-gradient(90deg,var(--soc-navy),#0b2036)}.scanner-brand{display:flex;align-items:center;gap:11px}.scanner-brand-shield{width:36px;height:42px;display:grid;place-items:center;clip-path:polygon(50% 0,91% 16%,91% 54%,74% 79%,50% 100%,26% 79%,9% 54%,9% 16%);background:linear-gradient(180deg,#59c7ff,#1585ca);color:#fff;font-size:19px;font-weight:950}.scanner-brand-name{color:#fff;font-size:18px;font-weight:900;letter-spacing:.15px}
+.scanner-context{flex:0 0 auto;padding:15px 14px 13px;border-bottom:1px solid var(--soc-border);background:linear-gradient(180deg,#f8fbfe,#eef6fb);text-align:center}.scanner-context-label{color:#55738f;font-size:11px;font-weight:900;letter-spacing:1px}.expected{max-width:none;min-width:0;padding:0;border:0;border-radius:0;background:transparent;text-align:center}.expected .point{margin-top:2px;color:#0e5595;font-size:clamp(39px,10vw,52px);line-height:1;font-weight:950;letter-spacing:-1.4px}.expected .name{margin-top:5px;color:var(--soc-text);font-size:clamp(15px,4vw,18px);font-weight:900}
+.camera-stage{margin:12px 12px 0;border:1px solid #a9c1d2;border-radius:16px;box-shadow:0 5px 18px rgba(11,28,47,.08)}.scan-corners{width:min(64vw,270px)}.scan-corners::before{border:4px solid #1b9af0}.scan-corners::after{inset:50% 0 auto;height:2px;border-radius:0;background:rgba(229,57,53,.88);box-shadow:0 0 12px rgba(229,57,53,.62);transform:translateY(-50%)}
+.scanner-footer{gap:8px;padding:10px 12px 12px;background:#fff}.message{min-height:20px;color:#49627a;font-size:clamp(12px,3vw,14px);font-weight:750}.ok{color:var(--soc-green)}.warn{color:#a86009}.error{color:var(--soc-red)}.camera-control{min-width:48px;min-height:40px;border:1px solid #c9d9e5;border-radius:10px;background:#eef5fa;color:#204765;font-size:13px}#retryButton{min-height:42px;padding:9px 16px;border-radius:10px;background:linear-gradient(180deg,#1595ec,#0875c8);color:#fff;font-size:13px;font-weight:900}.small{color:#7890a5;font-size:clamp(9px,2.3vw,11px)}
+@media(max-height:720px){.scanner-brandbar{min-height:56px}.scanner-brand-shield{width:30px;height:35px}.scanner-brand-name{font-size:15px}.scanner-context{padding:9px 12px 8px}.expected .point{font-size:clamp(31px,8vw,40px)}.camera-stage{margin-top:8px}.scanner-footer{padding-top:7px}}
+
+</style>
 </head>
 
 <body>
 <div class="page">
   <div class="card">
-    <div class="scanner-header">
-      <div class="header-copy">
-        <div class="eyebrow">SECURITY PATROL</div>
-        <h1>SCAN CHECKPOINT</h1>
+    <div class="scanner-brandbar">
+      <div class="scanner-brand">
+        <div class="scanner-brand-shield" aria-hidden="true"><span>✓</span></div>
+        <div class="scanner-brand-name">SECURITY PATROL</div>
       </div>
+    </div>
 
+    <div class="scanner-context">
+      <div class="scanner-context-label">SCAN CHECKPOINT</div>
       <div class="expected">
         <div id="expectedPoint" class="point">CHECKPOINT</div>
         <div id="expectedName" class="name"></div>
@@ -441,6 +455,7 @@
   const params = new URLSearchParams(window.location.search);
 
   const expected = Number(params.get('expected'));
+  const totalCheckpoints = Number(params.get('total')) || 22;
   const expectedName = params.get('name') || '';
   const returnUrl = params.get('return') || '';
   const voiceEnabled = params.get('voice') !== '0';
@@ -448,6 +463,9 @@
   let scanner = null;
   let scannerRunning = false;
   let detectionLocked = false;
+
+  let scannerVoiceUnlockedV1107 =
+    false;
 
   const CAMERA_STORAGE_KEY = 'securityPatrolPreferredCameraId';
   const ZOOM_STORAGE_KEY = 'securityPatrolPreferredZoom';
@@ -459,15 +477,144 @@
   let zoomCapability = null;
 
   document.getElementById('expectedPoint').textContent =
-    Number.isInteger(expected) ? 'CHECKPOINT ' + expected : 'CHECKPOINT';
+    Number.isInteger(expected)
+      ? (String(expected).padStart(2, '0') + ' / ' + String(totalCheckpoints).padStart(2, '0'))
+      : 'CHECKPOINT';
 
-  document.getElementById('expectedName').textContent = expectedName;
+  document.getElementById('expectedName').textContent = expectedName || '';
 
-  window.addEventListener('load', startScanner);
+  window.addEventListener(
+    'load',
+    handleScannerLoadV1107_
+  );
+
+  document.addEventListener(
+    'pointerdown',
+    unlockScannerVoiceV1107_,
+    true
+  );
+
+  document.addEventListener(
+    'keydown',
+    unlockScannerVoiceV1107_,
+    true
+  );
 
   window.addEventListener('pagehide', function() {
     stopScanner();
   });
+
+
+  function handleScannerLoadV1107_() {
+    try {
+      if (
+        navigator.userActivation &&
+        navigator.userActivation.hasBeenActive
+      ) {
+        scannerVoiceUnlockedV1107 =
+          true;
+      }
+    } catch (ignored) {}
+
+    speakScanner(
+      Number.isInteger(expected)
+        ? (
+            'Scanner opened. Scan checkpoint ' +
+            expected +
+            '.'
+          )
+        : 'Scanner opened.'
+    );
+
+    startScanner();
+  }
+
+
+  function unlockScannerVoiceV1107_() {
+    if (
+      scannerVoiceUnlockedV1107 ||
+      !scannerVoiceSupported()
+    ) {
+      return;
+    }
+
+    scannerVoiceUnlockedV1107 =
+      true;
+
+    speakScanner(
+      Number.isInteger(expected)
+        ? (
+            'Ready to scan checkpoint ' +
+            expected +
+            '.'
+          )
+        : 'Ready to scan.'
+    );
+  }
+
+
+  function speakScannerAndWaitV1107_(
+    text,
+    maximumWaitMs
+  ) {
+    return new Promise(
+      function(resolve) {
+        if (
+          !scannerVoiceSupported() ||
+          !text
+        ) {
+          resolve();
+          return;
+        }
+
+        let finished = false;
+
+        function done() {
+          if (finished) return;
+          finished = true;
+          resolve();
+        }
+
+        try {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+
+          const utterance =
+            new SpeechSynthesisUtterance(
+              String(text)
+            );
+
+          utterance.lang = 'en-MY';
+          utterance.rate = 0.75;
+          utterance.pitch = 1;
+          utterance.volume = 1;
+
+          utterance.onstart =
+            function() {
+              scannerVoiceUnlockedV1107 =
+                true;
+            };
+
+          utterance.onend = done;
+          utterance.onerror = done;
+
+          window.speechSynthesis.speak(
+            utterance
+          );
+
+          setTimeout(
+            done,
+            Number(
+              maximumWaitMs || 1200
+            )
+          );
+
+        } catch (ignored) {
+          done();
+        }
+      }
+    );
+  }
 
 
   function scannerVoiceSupported() {
@@ -894,7 +1041,7 @@
       ''
     );
 
-    speakScanner('Ready to scan.');
+    // Voice is handled at scanner entry or natural scanner interaction.
   }
 
 
@@ -962,8 +1109,12 @@
 
     detectionLocked = true;
 
-    // Keep the Guard page alive. It owns GPS, server verification and voice.
     setMessage('Checkpoint scanned. Returning...', 'ok');
+
+    await speakScannerAndWaitV1107_(
+      'Checkpoint scanned.',
+      1200
+    );
 
     await stopScanner();
 
