@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 2.0.0.0alpha7 - Scanner Camera, Haptic & Detection Refinement -->
+<!-- 2.0.0.0alpha8 - Scanner Camera, Haptic & Detection Refinement -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -507,7 +507,7 @@
     }
 
     /* =========================================================
-       2.0.0.0alpha7 - CAMERA, HAPTIC & DETECTION REFINEMENT
+       2.0.0.0alpha8 - CAMERA, HAPTIC & DETECTION REFINEMENT
        - high-tech dual-layer scan reticle
        - green first-detection feedback
        - frame remains optically synchronized with real qrbox
@@ -617,7 +617,7 @@
   let scannerVoiceUnlockedV1107 =
     false;
 
-  // Alpha7 stores a preferred MAIN rear camera separately from manual
+  // Alpha8 keeps the preferred MAIN rear camera separate from manual
   // camera switching. Switching cameras must never change next startup.
   const CAMERA_STORAGE_KEY = 'securityPatrolPreferredMainCameraIdV200a7';
   const ZOOM_STORAGE_KEY = 'securityPatrolPreferredZoom';
@@ -625,7 +625,15 @@
   const QR_CONFIRM_MS_V200A7 = 300;
   const QR_CANDIDATE_STALE_MS_V200A7 = 220;
   const QR_CONFIRM_SPAN_MS_V200A7 = 240;
-  const QR_HAPTIC_MS_V200A7 = 60;
+
+  // Alpha8: one stronger haptic pulse for EVERY new valid patrol-QR
+  // detection cycle. Browser vibration APIs control duration/pattern, not
+  // physical motor power, so 100 ms is used for a more noticeable pulse.
+  const QR_HAPTIC_MS_V200A8 = 100;
+
+  // Invalid QR voice is intentionally rate-limited so a non-patrol QR held
+  // in front of the camera cannot speak continuously at the 10 FPS scan rate.
+  const INVALID_QR_VOICE_COOLDOWN_MS_V200A8 = 2500;
 
   let availableRearCameras = [];
   let activeRearCameraIndex = -1;
@@ -642,6 +650,7 @@
   let qrCandidateLastSeenAtV200a7 = 0;
   let qrCandidateTimerV200a7 = null;
   let qrCandidateFinalizingV200a7 = false;
+  let lastInvalidQrVoiceAtV200a8 = 0;
 
   const SCANNER_BACK_STATE_KEY_V1113 =
     'scannerBackGuardV1113';
@@ -1709,12 +1718,30 @@
   }
 
 
-  function vibrateQrDetectedV200a7_() {
+  function vibrateQrDetectedV200a8_() {
     try {
       if (typeof navigator.vibrate === 'function') {
-        navigator.vibrate(QR_HAPTIC_MS_V200A7);
+        // Cancel any stale vibration request first, then issue one clean pulse.
+        // This runs once when a NEW valid patrol-QR candidate is detected.
+        navigator.vibrate(0);
+        navigator.vibrate(QR_HAPTIC_MS_V200A8);
       }
     } catch (ignored) {}
+  }
+
+
+  function announceInvalidQrV200a8_() {
+    const now = Date.now();
+
+    if (
+      now - lastInvalidQrVoiceAtV200a8 <
+      INVALID_QR_VOICE_COOLDOWN_MS_V200A8
+    ) {
+      return;
+    }
+
+    lastInvalidQrVoiceAtV200a8 = now;
+    speakScanner('Invalid patrol QR.');
   }
 
 
@@ -1872,6 +1899,7 @@
         'Invalid patrol QR. Scan the checkpoint QR.',
         'warn'
       );
+      announceInvalidQrV200a8_();
       return;
     }
 
@@ -1892,9 +1920,9 @@
       qrCandidateFirstSeenAtV200a7 = now;
       qrCandidateLastSeenAtV200a7 = now;
 
-      // Haptic means CAMERA DETECTED A VALID PATROL QR. It is deliberately
-      // earlier than final capture/return confirmation.
-      vibrateQrDetectedV200a7_();
+      // Haptic means CAMERA DETECTED A VALID PATROL QR. Every new valid
+      // scan candidate gets one pulse, before final capture/return confirmation.
+      vibrateQrDetectedV200a8_();
       setScanFrameStateV200a7_('detected');
       setMessage('QR detected. Hold steady...', 'ok');
       scheduleQrCandidateCheckV200a7_();
