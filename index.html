@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 2.0.0.0alpha5 - Field Consistency Scanner -->
+<!-- 2.0.0.0alpha7 - Scanner Camera, Haptic & Detection Refinement -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -191,6 +191,9 @@
     #reader select { max-width:100%; }
 
     .scan-corners {
+      --scan-accent:#25a9ff;
+      --scan-accent-soft:rgba(37,169,255,.42);
+      --scan-glow:rgba(37,169,255,.44);
       position:absolute;
       z-index:8;
       left:50%;
@@ -199,26 +202,76 @@
       aspect-ratio:1/1;
       transform:translate(-50%,-50%);
       pointer-events:none;
+      background:
+        linear-gradient(var(--scan-accent-soft),var(--scan-accent-soft)) center top/24px 1px no-repeat,
+        linear-gradient(var(--scan-accent-soft),var(--scan-accent-soft)) center bottom/24px 1px no-repeat,
+        linear-gradient(var(--scan-accent-soft),var(--scan-accent-soft)) left center/1px 24px no-repeat,
+        linear-gradient(var(--scan-accent-soft),var(--scan-accent-soft)) right center/1px 24px no-repeat;
+      filter:drop-shadow(0 0 7px var(--scan-glow));
+      transition:filter .12s ease,opacity .12s ease;
     }
 
     .scan-corners::before,
-    .scan-corners::after { content:""; position:absolute; inset:0; }
-
-    .scan-corners::before {
-      border:0;
-      background:
-        linear-gradient(var(--blue),var(--blue)) left top/46px 4px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) left top/4px 46px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) right top/46px 4px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) right top/4px 46px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) left bottom/46px 4px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) left bottom/4px 46px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) right bottom/46px 4px no-repeat,
-        linear-gradient(var(--blue),var(--blue)) right bottom/4px 46px no-repeat;
-      filter:drop-shadow(0 0 4px rgba(11,132,229,.3));
+    .scan-corners::after {
+      content:"";
+      position:absolute;
+      pointer-events:none;
     }
 
-    .scan-corners::after { display:none !important; }
+    .scan-corners::before {
+      inset:0;
+      background:
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left top/52px 4px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left top/4px 52px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right top/52px 4px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right top/4px 52px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left bottom/52px 4px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left bottom/4px 52px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right bottom/52px 4px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right bottom/4px 52px no-repeat;
+      animation:scanTechPulseV200a7_ 1.8s ease-in-out infinite;
+    }
+
+    .scan-corners::after {
+      inset:10px;
+      opacity:.58;
+      background:
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left top/22px 2px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left top/2px 22px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right top/22px 2px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right top/2px 22px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left bottom/22px 2px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) left bottom/2px 22px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right bottom/22px 2px no-repeat,
+        linear-gradient(var(--scan-accent),var(--scan-accent)) right bottom/2px 22px no-repeat;
+    }
+
+    .scan-corners.is-detected {
+      --scan-accent:#35d98a;
+      --scan-accent-soft:rgba(53,217,138,.52);
+      --scan-glow:rgba(53,217,138,.64);
+      filter:drop-shadow(0 0 11px var(--scan-glow));
+    }
+
+    .scan-corners.is-confirmed::before {
+      animation:scanConfirmV200a7_ .28s ease-out 1;
+    }
+
+    @keyframes scanTechPulseV200a7_ {
+      0%,100% { opacity:.78; }
+      50% { opacity:1; }
+    }
+
+    @keyframes scanConfirmV200a7_ {
+      0% { opacity:.7; }
+      45% { opacity:1; }
+      100% { opacity:.9; }
+    }
+
+    @media (prefers-reduced-motion:reduce) {
+      .scan-corners::before,
+      .scan-corners.is-confirmed::before { animation:none !important; }
+    }
 
     .scanner-footer {
       position:absolute;
@@ -453,6 +506,17 @@
       }
     }
 
+    /* =========================================================
+       2.0.0.0alpha7 - CAMERA, HAPTIC & DETECTION REFINEMENT
+       - high-tech dual-layer scan reticle
+       - green first-detection feedback
+       - frame remains optically synchronized with real qrbox
+       ========================================================= */
+
+    .scan-corners.is-detected::after {
+      opacity:.82;
+    }
+
 
   </style>
 </head>
@@ -522,7 +586,7 @@
       </div>
 
       <div class="small">
-        Keep the checkpoint QR inside the blue corners.
+        Keep the checkpoint QR inside the scan frame.
       </div>
     </div>
   </div>
@@ -553,17 +617,31 @@
   let scannerVoiceUnlockedV1107 =
     false;
 
-  const CAMERA_STORAGE_KEY = 'securityPatrolPreferredCameraId';
+  // Alpha7 stores a preferred MAIN rear camera separately from manual
+  // camera switching. Switching cameras must never change next startup.
+  const CAMERA_STORAGE_KEY = 'securityPatrolPreferredMainCameraIdV200a7';
   const ZOOM_STORAGE_KEY = 'securityPatrolPreferredZoom';
+
+  const QR_CONFIRM_MS_V200A7 = 300;
+  const QR_CANDIDATE_STALE_MS_V200A7 = 220;
+  const QR_CONFIRM_SPAN_MS_V200A7 = 240;
+  const QR_HAPTIC_MS_V200A7 = 60;
 
   let availableRearCameras = [];
   let activeRearCameraIndex = -1;
   let activeCameraId = '';
   let currentZoom = 1;
   let zoomCapability = null;
+  let torchFeatureV200a7 = null;
   let torchSupported = false;
   let torchEnabled = false;
   let scannerWakeLockV200a1 = null;
+
+  let qrCandidatePointV200a7 = null;
+  let qrCandidateFirstSeenAtV200a7 = 0;
+  let qrCandidateLastSeenAtV200a7 = 0;
+  let qrCandidateTimerV200a7 = null;
+  let qrCandidateFinalizingV200a7 = false;
 
   const SCANNER_BACK_STATE_KEY_V1113 =
     'scannerBackGuardV1113';
@@ -969,6 +1047,13 @@
   }
 
 
+  function clearRememberedCameraIdV200a7_() {
+    try {
+      localStorage.removeItem(CAMERA_STORAGE_KEY);
+    } catch (ignored) {}
+  }
+
+
   function loadRememberedZoom_() {
     try {
       const saved = Number(localStorage.getItem(ZOOM_STORAGE_KEY));
@@ -989,35 +1074,33 @@
   async function getPreferredRearCamera_() {
     await loadRearCameras_();
 
-    if (!availableRearCameras.length) {
-      activeRearCameraIndex = -1;
-      activeCameraId = '';
-      return { facingMode: { exact: 'environment' } };
-    }
-
+    // If a torch-capable main rear camera has already been proven on this
+    // device, reopen that exact physical camera every time.
     const rememberedId = loadRememberedCameraId_();
-    let selectedIndex = -1;
 
-    if (rememberedId) {
-      selectedIndex = availableRearCameras.findIndex(function(camera) {
-        return String(camera.id) === rememberedId;
-      });
+    if (rememberedId && availableRearCameras.length) {
+      const selectedIndex =
+        availableRearCameras.findIndex(function(camera) {
+          return String(camera.id) === rememberedId;
+        });
+
+      if (selectedIndex >= 0) {
+        activeRearCameraIndex = selectedIndex;
+        activeCameraId = rememberedId;
+        return { deviceId: { exact: rememberedId } };
+      }
+
+      clearRememberedCameraIdV200a7_();
     }
 
-    if (selectedIndex < 0) {
-      selectedIndex = 0;
-    }
-
-    activeRearCameraIndex = selectedIndex;
-    activeCameraId = String(availableRearCameras[selectedIndex].id || '');
-
-    if (activeCameraId) {
-      return { deviceId: { exact: activeCameraId } };
-    }
-
-    return { facingMode: { exact: 'environment' } };
+    // First-use / no proven preferred camera: ask the browser for its normal
+    // environment camera instead of forcing an arbitrary enumerated rear lens.
+    // On modern phones this is normally the primary wide rear camera. Once its
+    // real torch capability is confirmed, its deviceId is persisted above.
+    activeRearCameraIndex = -1;
+    activeCameraId = '';
+    return { facingMode: 'environment' };
   }
-
 
   function getRunningVideoTrackV200a2_() {
     try {
@@ -1038,6 +1121,7 @@
 
   async function readCameraZoomCapability_() {
     zoomCapability = null;
+    torchFeatureV200a7 = null;
     torchSupported = false;
     torchEnabled = false;
 
@@ -1068,17 +1152,42 @@
       zoomCapability = capabilities.zoom;
     }
 
-    if (capabilities) {
-      if (
-        capabilities.torch === true ||
-        Object.prototype.hasOwnProperty.call(capabilities, 'torch') ||
-        (
-          Array.isArray(capabilities.fillLightMode) &&
-          capabilities.fillLightMode.length > 0
-        )
-      ) {
-        torchSupported = true;
+    // Prefer html5-qrcode's camera capability abstraction. It checks the
+    // exact running physical camera rather than browser-wide support.
+    try {
+      if (typeof scanner.getRunningTrackCameraCapabilities === 'function') {
+        const cameraCapabilities =
+          scanner.getRunningTrackCameraCapabilities();
+
+        if (
+          cameraCapabilities &&
+          typeof cameraCapabilities.torchFeature === 'function'
+        ) {
+          const feature = cameraCapabilities.torchFeature();
+
+          if (
+            feature &&
+            typeof feature.isSupported === 'function' &&
+            feature.isSupported() === true
+          ) {
+            torchFeatureV200a7 = feature;
+            torchSupported = true;
+
+            if (typeof feature.value === 'function') {
+              const value = feature.value();
+              if (typeof value === 'boolean') {
+                torchEnabled = value;
+              }
+            }
+          }
+        }
       }
+    } catch (ignored) {}
+
+    // Strict fallback for browsers where the html5-qrcode feature wrapper is
+    // unavailable. Presence of a property is NOT enough; it must report true.
+    if (!torchSupported && capabilities && capabilities.torch === true) {
+      torchSupported = true;
     }
 
     try {
@@ -1095,25 +1204,23 @@
       torchEnabled = settings.torch;
     }
 
-    // Some Android Chromium devices can apply torch even when the html5-qrcode
-    // capability wrapper omits it. Show the control optimistically only when
-    // the browser advertises torch constraints on a live rear camera track.
-    if (!torchSupported && track) {
-      try {
-        const supported = navigator.mediaDevices &&
-          navigator.mediaDevices.getSupportedConstraints
-          ? navigator.mediaDevices.getSupportedConstraints()
-          : {};
+    // The first rear camera that is proven torch-capable becomes the
+    // persistent startup camera. Once established, manual camera switching
+    // never overwrites this preferred-main choice.
+    if (torchSupported && activeCameraId) {
+      const rememberedId = loadRememberedCameraId_();
 
-        const facingMode = String(settings && settings.facingMode || '').toLowerCase();
-        const rearCamera =
-          facingMode === 'environment' ||
-          !!activeCameraId;
-
-        if (rearCamera && supported && supported.torch) {
-          torchSupported = true;
-        }
-      } catch (ignored) {}
+      if (!rememberedId) {
+        rememberCameraId_(activeCameraId);
+      }
+    } else if (
+      activeCameraId &&
+      loadRememberedCameraId_() === activeCameraId &&
+      !torchSupported
+    ) {
+      // Do not keep a stale preferred-main ID if this physical camera no
+      // longer exposes real torch capability.
+      clearRememberedCameraIdV200a7_();
     }
   }
 
@@ -1192,16 +1299,26 @@
   }
 
 
-  async function toggleTorch_() {
+  async function applyTorchStateV200a7_(nextState) {
     if (!torchSupported || !scannerRunning) {
-      return;
+      return false;
     }
 
-    const nextState = !torchEnabled;
-    const track = getRunningVideoTrackV200a2_();
     let applied = false;
 
-    if (track && typeof track.applyConstraints === 'function') {
+    if (
+      torchFeatureV200a7 &&
+      typeof torchFeatureV200a7.apply === 'function'
+    ) {
+      try {
+        await torchFeatureV200a7.apply(nextState);
+        applied = true;
+      } catch (ignored) {}
+    }
+
+    const track = getRunningVideoTrackV200a2_();
+
+    if (!applied && track && typeof track.applyConstraints === 'function') {
       try {
         await track.applyConstraints({
           advanced: [{ torch: nextState }]
@@ -1220,17 +1337,60 @@
     }
 
     if (!applied) {
+      return false;
+    }
+
+    let verifiedState = null;
+
+    try {
+      if (
+        torchFeatureV200a7 &&
+        typeof torchFeatureV200a7.value === 'function'
+      ) {
+        const value = torchFeatureV200a7.value();
+        if (typeof value === 'boolean') {
+          verifiedState = value;
+        }
+      }
+    } catch (ignored) {}
+
+    if (verifiedState === null) {
       try {
-        await scanner.applyVideoConstraints({
-          advanced: [{ fillLightMode: nextState ? 'flash' : 'off' }]
-        });
-        applied = true;
+        const settings = scanner.getRunningTrackSettings();
+        if (settings && typeof settings.torch === 'boolean') {
+          verifiedState = settings.torch;
+        }
       } catch (ignored) {}
     }
+
+    // If the running camera reports an explicit post-apply state, require it
+    // to match. Otherwise trust the successful constraint application because
+    // some Android tracks omit torch from getSettings().
+    if (verifiedState !== null && verifiedState !== nextState) {
+      return false;
+    }
+
+    torchEnabled =
+      verifiedState === null
+        ? nextState
+        : verifiedState;
+
+    return true;
+  }
+
+
+  async function toggleTorch_() {
+    if (!torchSupported || !scannerRunning) {
+      return;
+    }
+
+    const nextState = !torchEnabled;
+    const applied = await applyTorchStateV200a7_(nextState);
 
     if (!applied) {
       torchSupported = false;
       torchEnabled = false;
+      torchFeatureV200a7 = null;
       updateCameraControls_();
       setMessage(
         'Flashlight is not available on this camera.',
@@ -1239,12 +1399,24 @@
       return;
     }
 
-    torchEnabled = nextState;
     updateCameraControls_();
     setMessage(
-      nextState ? 'Flashlight on.' : 'Flashlight off.',
-      nextState ? 'ok' : ''
+      torchEnabled ? 'Flashlight on.' : 'Flashlight off.',
+      torchEnabled ? 'ok' : ''
     );
+  }
+
+
+  async function turnTorchOffBeforeSwitchV200a7_() {
+    if (!torchEnabled || !scannerRunning) {
+      return;
+    }
+
+    try {
+      await applyTorchStateV200a7_(false);
+    } catch (ignored) {}
+
+    torchEnabled = false;
   }
 
   async function switchRearCamera_() {
@@ -1268,13 +1440,15 @@
     }
 
     setMessage('Switching rear camera...', '');
-
+    resetQrCandidateV200a7_(false);
+    await turnTorchOffBeforeSwitchV200a7_();
     await stopScanner();
 
     activeRearCameraIndex = nextIndex;
     activeCameraId = nextCameraId;
-    rememberCameraId_(nextCameraId);
 
+    // Deliberately do NOT persist manual camera switching. The next scanner
+    // opening returns to the preferred main rear camera.
     await startScannerWithCamera_({
       deviceId: { exact: nextCameraId }
     });
@@ -1436,7 +1610,7 @@
         qrbox: getAdaptiveQrBox_()
       },
       onQrDetected,
-      function() {}
+      onQrDecodeErrorV200a7_
     );
 
     try {
@@ -1453,7 +1627,6 @@
           activeRearCameraIndex = matchedIndex;
         }
 
-        rememberCameraId_(activeCameraId);
       }
     } catch (ignored) {}
 
@@ -1473,6 +1646,8 @@
 
   async function startScanner() {
     detectionLocked = false;
+    qrCandidateFinalizingV200a7 = false;
+    resetQrCandidateV200a7_(false);
 
     if (!window.isSecureContext) {
       showError(
@@ -1513,26 +1688,134 @@
   }
 
 
-  async function onQrDetected(decodedText) {
-    if (detectionLocked) return;
+  function getScanFrameV200a7_() {
+    return document.querySelector('.scan-corners');
+  }
 
-    const scannedPoint = extractPoint(decodedText);
 
-    if (!Number.isInteger(scannedPoint)) {
-      setMessage(
-        'Invalid patrol QR. Scan the checkpoint QR.',
-        'warn'
-      );
+  function setScanFrameStateV200a7_(state) {
+    const frame = getScanFrameV200a7_();
+    if (!frame) return;
+
+    frame.classList.toggle(
+      'is-detected',
+      state === 'detected' || state === 'confirmed'
+    );
+
+    frame.classList.toggle(
+      'is-confirmed',
+      state === 'confirmed'
+    );
+  }
+
+
+  function vibrateQrDetectedV200a7_() {
+    try {
+      if (typeof navigator.vibrate === 'function') {
+        navigator.vibrate(QR_HAPTIC_MS_V200A7);
+      }
+    } catch (ignored) {}
+  }
+
+
+  function clearQrCandidateTimerV200a7_() {
+    if (qrCandidateTimerV200a7 !== null) {
+      clearTimeout(qrCandidateTimerV200a7);
+      qrCandidateTimerV200a7 = null;
+    }
+  }
+
+
+  function resetQrCandidateV200a7_(restoreMessage) {
+    clearQrCandidateTimerV200a7_();
+    qrCandidatePointV200a7 = null;
+    qrCandidateFirstSeenAtV200a7 = 0;
+    qrCandidateLastSeenAtV200a7 = 0;
+
+    if (!detectionLocked) {
+      setScanFrameStateV200a7_('idle');
+
+      if (restoreMessage) {
+        setMessage('Align QR code within the frame.', '');
+      }
+    }
+  }
+
+
+  function scheduleQrCandidateCheckV200a7_() {
+    clearQrCandidateTimerV200a7_();
+
+    qrCandidateTimerV200a7 =
+      setTimeout(function() {
+        qrCandidateTimerV200a7 = null;
+
+        if (
+          detectionLocked ||
+          qrCandidateFinalizingV200a7 ||
+          !Number.isInteger(qrCandidatePointV200a7)
+        ) {
+          return;
+        }
+
+        const now = Date.now();
+        const elapsed = now - qrCandidateFirstSeenAtV200a7;
+        const freshness = now - qrCandidateLastSeenAtV200a7;
+
+        const observedSpan =
+          qrCandidateLastSeenAtV200a7 -
+          qrCandidateFirstSeenAtV200a7;
+
+        if (
+          elapsed >= QR_CONFIRM_MS_V200A7 &&
+          observedSpan >= QR_CONFIRM_SPAN_MS_V200A7 &&
+          freshness <= QR_CANDIDATE_STALE_MS_V200A7
+        ) {
+          finalizeQrCandidateV200a7_(qrCandidatePointV200a7);
+          return;
+        }
+
+        if (freshness > QR_CANDIDATE_STALE_MS_V200A7) {
+          resetQrCandidateV200a7_(true);
+          return;
+        }
+
+        scheduleQrCandidateCheckV200a7_();
+      }, 60);
+  }
+
+
+  function onQrDecodeErrorV200a7_() {
+    if (
+      detectionLocked ||
+      qrCandidateFinalizingV200a7 ||
+      !Number.isInteger(qrCandidatePointV200a7)
+    ) {
       return;
     }
 
-    if (!returnUrl) {
-      showError('Patrol return address is missing.');
+    if (
+      Date.now() - qrCandidateLastSeenAtV200a7 >
+      QR_CANDIDATE_STALE_MS_V200A7
+    ) {
+      resetQrCandidateV200a7_(true);
+    }
+  }
+
+
+  async function finalizeQrCandidateV200a7_(scannedPoint) {
+    if (
+      detectionLocked ||
+      qrCandidateFinalizingV200a7 ||
+      !Number.isInteger(scannedPoint)
+    ) {
       return;
     }
 
+    qrCandidateFinalizingV200a7 = true;
     detectionLocked = true;
+    clearQrCandidateTimerV200a7_();
     releaseScannerBackProtectionV1113_();
+    setScanFrameStateV200a7_('confirmed');
 
     setMessage('Checkpoint captured. Returning...', 'ok');
 
@@ -1579,6 +1862,58 @@
   }
 
 
+  async function onQrDetected(decodedText) {
+    if (detectionLocked || qrCandidateFinalizingV200a7) return;
+
+    const scannedPoint = extractPoint(decodedText);
+
+    if (!Number.isInteger(scannedPoint)) {
+      setMessage(
+        'Invalid patrol QR. Scan the checkpoint QR.',
+        'warn'
+      );
+      return;
+    }
+
+    if (!returnUrl) {
+      showError('Patrol return address is missing.');
+      return;
+    }
+
+    const now = Date.now();
+    const candidateIsSame =
+      scannedPoint === qrCandidatePointV200a7 &&
+      now - qrCandidateLastSeenAtV200a7 <=
+        QR_CANDIDATE_STALE_MS_V200A7;
+
+    if (!candidateIsSame) {
+      resetQrCandidateV200a7_(false);
+      qrCandidatePointV200a7 = scannedPoint;
+      qrCandidateFirstSeenAtV200a7 = now;
+      qrCandidateLastSeenAtV200a7 = now;
+
+      // Haptic means CAMERA DETECTED A VALID PATROL QR. It is deliberately
+      // earlier than final capture/return confirmation.
+      vibrateQrDetectedV200a7_();
+      setScanFrameStateV200a7_('detected');
+      setMessage('QR detected. Hold steady...', 'ok');
+      scheduleQrCandidateCheckV200a7_();
+      return;
+    }
+
+    qrCandidateLastSeenAtV200a7 = now;
+
+    if (
+      now - qrCandidateFirstSeenAtV200a7 >=
+        QR_CONFIRM_MS_V200A7 &&
+      qrCandidateLastSeenAtV200a7 -
+        qrCandidateFirstSeenAtV200a7 >=
+        QR_CONFIRM_SPAN_MS_V200A7
+    ) {
+      await finalizeQrCandidateV200a7_(scannedPoint);
+    }
+  }
+
   function extractPoint(text) {
     try {
       const parsed = new URL(text);
@@ -1621,8 +1956,10 @@
     scannerRunning = false;
     scanner = null;
     zoomCapability = null;
+    torchFeatureV200a7 = null;
     torchSupported = false;
     torchEnabled = false;
+    resetQrCandidateV200a7_(false);
     await releaseScannerWakeLockV200a1_();
     updateCameraControls_();
   }
