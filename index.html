@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v1.11.2 - Torch Enabled Centered Adaptive Scanner -->
+<!-- v1.11.3 - Scanner Back Button Protection -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -594,6 +594,38 @@ html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:sy
       }
     }
 
+  
+
+    /* v1.11.3 - accidental mobile Back protection */
+    .scanner-back-toast-v1113 {
+      position: fixed;
+      left: 50%;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      transform: translate(-50%, 14px);
+      width: calc(100% - 28px);
+      max-width: 420px;
+      padding: 11px 13px;
+      border-radius: 12px;
+      background: rgba(11, 28, 47, .96);
+      color: #fff;
+      box-shadow: 0 10px 28px rgba(11,28,47,.28);
+      text-align: center;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.3;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+      z-index: 10050;
+    }
+
+    .scanner-back-toast-v1113.show {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, 0);
+    }
+
   </style>
 </head>
 
@@ -668,6 +700,15 @@ html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:sy
   </div>
 </div>
 
+<div
+  id="scannerBackToastV1113"
+  class="scanner-back-toast-v1113"
+  role="status"
+  aria-live="polite"
+>
+  Back is disabled while the checkpoint scanner is active.
+</div>
+
 <script>
   const params = new URLSearchParams(window.location.search);
 
@@ -694,6 +735,13 @@ html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:sy
   let zoomCapability = null;
   let torchSupported = false;
   let torchEnabled = false;
+
+  const SCANNER_BACK_STATE_KEY_V1113 =
+    'scannerBackGuardV1113';
+
+  let scannerBackProtectionInstalledV1113 = false;
+  let scannerBackProtectionEnabledV1113 = true;
+  let scannerBackToastTimerV1113 = null;
 
   document.getElementById('expectedPoint').textContent =
     Number.isInteger(expected)
@@ -724,7 +772,98 @@ html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:sy
   });
 
 
+  function installScannerBackProtectionV1113_() {
+    if (scannerBackProtectionInstalledV1113) {
+      return;
+    }
+
+    scannerBackProtectionInstalledV1113 = true;
+    scannerBackProtectionEnabledV1113 = true;
+
+    window.addEventListener(
+      'popstate',
+      handleScannerBackAttemptV1113_,
+      false
+    );
+
+    armScannerBackProtectionV1113_();
+  }
+
+
+  function armScannerBackProtectionV1113_() {
+    if (!scannerBackProtectionEnabledV1113) {
+      return;
+    }
+
+    try {
+      if (
+        history.state &&
+        history.state[SCANNER_BACK_STATE_KEY_V1113]
+      ) {
+        return;
+      }
+
+      const state = {};
+      state[SCANNER_BACK_STATE_KEY_V1113] = true;
+
+      history.pushState(
+        state,
+        document.title,
+        window.location.href
+      );
+    } catch (ignored) {}
+  }
+
+
+  function handleScannerBackAttemptV1113_() {
+    if (!scannerBackProtectionEnabledV1113) {
+      return;
+    }
+
+    setTimeout(function() {
+      armScannerBackProtectionV1113_();
+      showScannerBackToastV1113_();
+    }, 0);
+  }
+
+
+  function showScannerBackToastV1113_() {
+    const toast =
+      document.getElementById(
+        'scannerBackToastV1113'
+      );
+
+    if (!toast) {
+      return;
+    }
+
+    if (scannerBackToastTimerV1113) {
+      clearTimeout(scannerBackToastTimerV1113);
+    }
+
+    toast.classList.add('show');
+
+    scannerBackToastTimerV1113 =
+      setTimeout(function() {
+        toast.classList.remove('show');
+        scannerBackToastTimerV1113 = null;
+      }, 2000);
+  }
+
+
+  function releaseScannerBackProtectionV1113_() {
+    scannerBackProtectionEnabledV1113 = false;
+
+    if (scannerBackToastTimerV1113) {
+      clearTimeout(scannerBackToastTimerV1113);
+      scannerBackToastTimerV1113 = null;
+    }
+  }
+
+
   function handleScannerLoadV1107_() {
+    installScannerBackProtectionV1113_();
+
     try {
       if (
         navigator.userActivation &&
@@ -1403,6 +1542,7 @@ html,body{background:var(--soc-canvas)}body{color:var(--soc-text);font-family:sy
     }
 
     detectionLocked = true;
+    releaseScannerBackProtectionV1113_();
 
     setMessage('Checkpoint scanned. Returning...', 'ok');
 
