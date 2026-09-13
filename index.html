@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2.0.0-alpha2 - Refined Immersive Scanner -->
+<!-- v2.0.0-alpha3 - Optically Centered Immersive Scanner -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -13,7 +13,7 @@
   <style>
 
     /* =========================================================
-       SECURITY PATROL 2.0.0-alpha2
+       SECURITY PATROL 2.0.0-alpha3
        Immersive Scanner
        ========================================================= */
 
@@ -194,7 +194,7 @@
       position:absolute;
       z-index:8;
       left:50%;
-      top:48%;
+      top:50%;
       width:min(64vw,260px);
       aspect-ratio:1/1;
       transform:translate(-50%,-50%);
@@ -344,6 +344,60 @@
       .camera-control { min-width:48px; min-height:40px; }
     }
 
+  
+    /* =========================================================
+       v2.0.0-alpha3 - OPTICAL CENTERING & SHARED TIME CONTEXT
+       ========================================================= */
+
+    .scanner-brandbar {
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .scanner-clock {
+      max-width: 112px;
+      color: #b9d1e2;
+      font-size: clamp(7.5px, 2vw, 9px);
+      line-height: 1.18;
+      font-weight: 780;
+      text-align: right;
+    }
+
+    .scanner-context-label {
+      font-size: clamp(13px, 3.5vw, 15px);
+    }
+
+    /*
+      The html5-qrcode scan region is centered inside #reader.
+      Alpha2 placed the custom blue frame at 48%, which made the two
+      viewfinders visibly disagree. Alpha3 uses the same 50/50 center.
+    */
+    .scan-corners {
+      top: 50% !important;
+      left: 50% !important;
+      width: var(--scan-box-size-v200a3, min(64vw,260px)) !important;
+      max-width: 72vw;
+      transform: translate(-50%, -50%) !important;
+    }
+
+    @media (max-height:700px) {
+      .scanner-clock {
+        max-width: 95px;
+        font-size: 7px;
+      }
+
+      .scanner-context-label {
+        font-size: 10px;
+      }
+    }
+
+    @media (max-width:380px) {
+      .scanner-clock {
+        max-width: 82px;
+        font-size: 6.5px;
+      }
+    }
+
   </style>
 </head>
 
@@ -355,6 +409,7 @@
         <div class="scanner-brand-shield" aria-hidden="true"><span>✓</span></div>
         <div class="scanner-brand-name">SECURITY PATROL</div>
       </div>
+      <div id="scannerClockV200a3" class="scanner-clock"></div>
     </div>
 
     <div class="scanner-context">
@@ -478,6 +533,41 @@
   }
 
   document.getElementById('expectedName').textContent = expectedName || '';
+
+  function updateScannerClockV200a3_() {
+    const el =
+      document.getElementById('scannerClockV200a3');
+
+    if (!el) return;
+
+    const now = new Date();
+
+    const date =
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }).format(now).toUpperCase();
+
+    const time =
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(now);
+
+    el.textContent =
+      date + ' · ' + time;
+  }
+
+  updateScannerClockV200a3_();
+  setInterval(
+    updateScannerClockV200a3_,
+    1000
+  );
 
   window.addEventListener(
     'load',
@@ -1223,6 +1313,13 @@
           Math.min(260, available * 0.68)
         )
       );
+
+    try {
+      document.documentElement.style.setProperty(
+        '--scan-box-size-v200a3',
+        String(side) + 'px'
+      );
+    } catch (ignored) {}
 
     return {
       width: side,
