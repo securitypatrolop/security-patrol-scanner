@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 2.0.0.0alpha9 - Main Camera, Flashlight & Invalid QR Refinement -->
+<!-- 2.0.0.0alpha10 - Browser-Native Camera Control Refinement -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -327,18 +327,30 @@
       transition:transform .10s ease, background .12s ease, border-color .12s ease;
     }
     .camera-control:active { transform:translateY(1px) scale(.97); }
-    #torchButton.is-on { background:rgba(11,132,229,.92); border-color:#5bb6f4; }
-    #torchButton.is-unavailable { position:relative; }
+    #torchButton { position:relative; }
+    #torchButton.is-on {
+      background:rgba(11,132,229,.92);
+      border-color:#5bb6f4;
+      text-shadow:0 0 9px rgba(255,231,120,.95);
+      box-shadow:0 0 16px rgba(91,182,244,.38),0 5px 18px rgba(0,0,0,.18);
+    }
+    #torchButton.is-unavailable:disabled { opacity:.72; }
+    #torchButton.is-unavailable::before,
     #torchButton.is-unavailable::after {
       content:"";
       position:absolute;
-      width:31px;
+      width:25px;
       height:2px;
       border-radius:2px;
-      background:currentColor;
-      transform:rotate(-45deg);
+      left:50%;
+      top:50%;
+      margin-left:-12.5px;
+      margin-top:-1px;
+      background:#ff4d57;
       pointer-events:none;
     }
+    #torchButton.is-unavailable::before { transform:rotate(45deg); }
+    #torchButton.is-unavailable::after { transform:rotate(-45deg); }
 
     #retryButton {
       min-height:48px;
@@ -575,7 +587,7 @@
                   title="Turn flashlight on"
                   aria-label="Turn flashlight on"
                   onclick="toggleTorch_()">
-            🔦
+            💡
           </button>
 
           <button id="zoomButton"
@@ -597,7 +609,7 @@
       </div>
 
       <div class="small">
-        Keep the checkpoint QR inside the scan frame.
+        Keep the checkpoint QR inside the scan frame. · v2.0.0-alpha10
       </div>
     </div>
   </div>
@@ -628,10 +640,12 @@
   let scannerVoiceUnlockedV1107 =
     false;
 
-  // Alpha9 startup policy:
-  // - choose the normal/main rear camera independently of torch support
-  // - start every scanner session at 1×
+  // Alpha10 camera policy:
+  // - let the browser/OS choose its default rear camera via facingMode
+  // - do not rank camera labels or force an enumerated lens at startup
+  // - do not apply any zoom constraint until the guard requests zoom
   // - keep manual camera/zoom changes temporary for the current scan
+  // - torch capability never decides which camera is selected
 
   const QR_CONFIRM_MS_V200A7 = 300;
   const QR_CANDIDATE_STALE_MS_V200A7 = 220;
@@ -648,7 +662,6 @@
 
   let availableRearCameras = [];
   let activeRearCameraIndex = -1;
-  let activeCameraId = '';
   let currentZoom = 1;
   let zoomCapability = null;
   let torchFeatureV200a7 = null;
@@ -994,7 +1007,7 @@
   }
 
 
-  async function loadRearCameras_() {
+  async function refreshRearCameras_() {
     let cameras = [];
 
     try {
@@ -1003,77 +1016,20 @@
       cameras = [];
     }
 
-    const ranked = cameras
-      .map(function(camera, index) {
-        const label = String(camera.label || '').toLowerCase();
-        let score = 0;
-
-        if (/back|rear|environment/.test(label)) score += 100;
-        if (/main|primary|standard|\b1(?:[\.,]0+)?x\b/.test(label)) score += 70;
-        if (/\bwide\b/.test(label) && !/ultra/.test(label)) score += 20;
-
-        if (
-          /ultra[\s-]?wide|ultrawide|macro|telephoto|tele|periscope|depth|\bzoom\b|(?:0[\.,]\d+|[2-9](?:[\.,]\d+)?)x\b/.test(label)
-        ) {
-          score -= 200;
-        }
-
-        if (/front|selfie|user/.test(label)) {
-          score -= 250;
-        }
-
-        score -= index;
-
-        return {
-          camera: camera,
-          label: label,
-          score: score
-        };
-      });
-
-    const rearCandidates = ranked.filter(function(item) {
-      return !/front|selfie|user/.test(item.label);
+    // Camera labels become available after permission on normal mobile
+    // browsers. Only remove cameras explicitly identified as front-facing.
+    // Preserve the browser's device order; do not guess lens type from labels.
+    const nonFront = cameras.filter(function(camera) {
+      const label = String(camera && camera.label || '').toLowerCase();
+      return !/front|selfie|user|facetime/.test(label);
     });
 
-    rearCandidates.sort(function(a, b) {
-      return b.score - a.score;
-    });
-
-    availableRearCameras = rearCandidates.map(function(item) {
-      return item.camera;
-    });
-
-    if (!availableRearCameras.length) {
-      availableRearCameras = cameras.slice();
-    }
+    availableRearCameras =
+      nonFront.length
+        ? nonFront
+        : cameras.slice();
 
     return availableRearCameras;
-  }
-
-
-  async function getPreferredRearCamera_() {
-    await loadRearCameras_();
-
-    // Prefer the best explicitly identified normal rear camera.
-    // If browser labels are not descriptive enough, fall back to the
-    // platform's normal environment-camera selection.
-    const candidate = availableRearCameras[0] || null;
-    const label = String(candidate && candidate.label || '').toLowerCase();
-
-    if (
-      candidate &&
-      candidate.id &&
-      /back|rear|environment|main|primary|standard|wide/.test(label) &&
-      !/front|selfie|user|ultra[\s-]?wide|ultrawide|macro|telephoto|tele|periscope|depth|\bzoom\b|(?:0[\.,]\d+|[2-9](?:[\.,]\d+)?)x\b/.test(label)
-    ) {
-      activeRearCameraIndex = 0;
-      activeCameraId = String(candidate.id);
-      return { deviceId: { exact: activeCameraId } };
-    }
-
-    activeRearCameraIndex = -1;
-    activeCameraId = '';
-    return { facingMode: 'environment' };
   }
 
 
@@ -1096,6 +1052,7 @@
 
   async function readCameraZoomCapability_() {
     zoomCapability = null;
+    currentZoom = 1;
     torchFeatureV200a7 = null;
     torchSupported = false;
     torchEnabled = false;
@@ -1127,8 +1084,8 @@
       zoomCapability = capabilities.zoom;
     }
 
-    // Prefer html5-qrcode's camera capability abstraction. It checks the
-    // exact running physical camera rather than browser-wide support.
+    // Torch support is read from the running camera only. It has no role in
+    // startup camera selection.
     try {
       if (typeof scanner.getRunningTrackCameraCapabilities === 'function') {
         const cameraCapabilities =
@@ -1159,8 +1116,6 @@
       }
     } catch (ignored) {}
 
-    // Strict fallback for browsers where the html5-qrcode feature wrapper is
-    // unavailable. Presence of a property is NOT enough; it must report true.
     if (!torchSupported && capabilities && capabilities.torch === true) {
       torchSupported = true;
     }
@@ -1175,35 +1130,22 @@
       } catch (ignored) {}
     }
 
+    if (
+      settings &&
+      typeof settings.zoom === 'number' &&
+      Number.isFinite(settings.zoom)
+    ) {
+      currentZoom = settings.zoom;
+    } else if (zoomCapability) {
+      currentZoom = Math.min(
+        zoomCapability.max,
+        Math.max(zoomCapability.min, 1)
+      );
+    }
+
     if (settings && typeof settings.torch === 'boolean') {
       torchEnabled = settings.torch;
     }
-
-  }
-
-  async function applyStartupZoom_() {
-    await readCameraZoomCapability_();
-
-    if (!zoomCapability) {
-      currentZoom = 1;
-      updateCameraControls_();
-      return;
-    }
-
-    const desired = Math.min(
-      zoomCapability.max,
-      Math.max(zoomCapability.min, 1)
-    );
-
-    currentZoom = desired;
-
-    try {
-      await scanner.applyVideoConstraints({
-        advanced: [{ zoom: desired }]
-      });
-    } catch (ignored) {}
-
-    updateCameraControls_();
   }
 
 
@@ -1335,8 +1277,8 @@
 
   function flashlightUnavailableMessage_() {
     return availableRearCameras.length > 1
-      ? 'Flashlight unavailable. Switch camera.'
-      : 'Flashlight unavailable.';
+      ? 'TO USE FLASHLIGHT. CHANGE CAMERA.'
+      : 'FLASHLIGHT UNAVAILABLE.';
   }
 
 
@@ -1406,8 +1348,6 @@
     await stopScanner();
 
     activeRearCameraIndex = nextIndex;
-    activeCameraId = nextCameraId;
-
     // Manual camera switching is temporary. The next scanner opening starts
     // again from the normal/main rear-camera policy.
     await startScannerWithCamera_({
@@ -1454,7 +1394,7 @@
     torchButton.classList.remove('hidden');
     torchButton.classList.toggle('is-on', !!torchEnabled);
     torchButton.classList.toggle('is-unavailable', !torchSupported);
-    torchButton.textContent = torchEnabled ? '💡' : '🔦';
+    torchButton.textContent = '💡';
 
     if (torchEnabled) {
       torchButton.title = 'Turn flashlight off';
@@ -1566,36 +1506,56 @@
 
   async function startScannerWithCamera_(cameraConfig) {
     scanner = new Html5Qrcode('reader');
-    scannerRunning = true;
+    scannerRunning = false;
 
-    await scanner.start(
-      cameraConfig,
-      {
-        fps: 10,
-        qrbox: getAdaptiveQrBox_()
-      },
-      onQrDetected,
-      onQrDecodeErrorV200a7_
-    );
+    try {
+      await scanner.start(
+        cameraConfig,
+        {
+          fps: 10,
+          qrbox: getAdaptiveQrBox_()
+        },
+        onQrDetected,
+        onQrDecodeErrorV200a7_
+      );
+    } catch (error) {
+      try {
+        scanner.clear();
+      } catch (ignored) {}
+
+      scanner = null;
+      throw error;
+    }
+
+    scannerRunning = true;
+    activeRearCameraIndex = -1;
+
+    // Enumerate only after the browser has opened its default rear camera.
+    // This list is for the guard's manual CHANGE CAMERA control, not startup.
+    await refreshRearCameras_();
 
     try {
       const settings = scanner.getRunningTrackSettings();
-      if (settings && settings.deviceId) {
-        activeCameraId = String(settings.deviceId);
+      const activeDeviceId =
+        settings && settings.deviceId
+          ? String(settings.deviceId)
+          : '';
 
+      if (activeDeviceId) {
         const matchedIndex =
           availableRearCameras.findIndex(function(camera) {
-            return String(camera.id) === activeCameraId;
+            return String(camera && camera.id || '') === activeDeviceId;
           });
 
         if (matchedIndex >= 0) {
           activeRearCameraIndex = matchedIndex;
         }
-
       }
     } catch (ignored) {}
 
-    await applyStartupZoom_();
+    // Read the camera's real default settings. Do not apply startup zoom.
+    await readCameraZoomCapability_();
+    updateCameraControls_();
     await requestScannerWakeLockV200a1_();
 
     setMessage(
@@ -1641,8 +1601,11 @@
     setMessage('Opening camera...', '');
 
     try {
-      const cameraConfig = await getPreferredRearCamera_();
-      await startScannerWithCamera_(cameraConfig);
+      // Html5-qrcode supports facingMode directly. Let Chrome/Android choose
+      // its normal rear camera instead of guessing a physical lens by label.
+      await startScannerWithCamera_({
+        facingMode: 'environment'
+      });
 
     } catch (error) {
       scannerRunning = false;
