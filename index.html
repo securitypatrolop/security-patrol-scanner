@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 2.0.0.0alpha8 - Scanner Camera, Haptic & Detection Refinement -->
+<!-- 2.0.0.0alpha9 - Main Camera, Flashlight & Invalid QR Refinement -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -328,6 +328,17 @@
     }
     .camera-control:active { transform:translateY(1px) scale(.97); }
     #torchButton.is-on { background:rgba(11,132,229,.92); border-color:#5bb6f4; }
+    #torchButton.is-unavailable { position:relative; }
+    #torchButton.is-unavailable::after {
+      content:"";
+      position:absolute;
+      width:31px;
+      height:2px;
+      border-radius:2px;
+      background:currentColor;
+      transform:rotate(-45deg);
+      pointer-events:none;
+    }
 
     #retryButton {
       min-height:48px;
@@ -559,7 +570,7 @@
           </button>
 
           <button id="torchButton"
-                  class="camera-control hidden"
+                  class="camera-control"
                   type="button"
                   title="Turn flashlight on"
                   aria-label="Turn flashlight on"
@@ -617,10 +628,10 @@
   let scannerVoiceUnlockedV1107 =
     false;
 
-  // Alpha8 keeps the preferred MAIN rear camera separate from manual
-  // camera switching. Switching cameras must never change next startup.
-  const CAMERA_STORAGE_KEY = 'securityPatrolPreferredMainCameraIdV200a7';
-  const ZOOM_STORAGE_KEY = 'securityPatrolPreferredZoom';
+  // Alpha9 startup policy:
+  // - choose the normal/main rear camera independently of torch support
+  // - start every scanner session at 1×
+  // - keep manual camera/zoom changes temporary for the current scan
 
   const QR_CONFIRM_MS_V200A7 = 300;
   const QR_CANDIDATE_STALE_MS_V200A7 = 220;
@@ -631,9 +642,9 @@
   // physical motor power, so 100 ms is used for a more noticeable pulse.
   const QR_HAPTIC_MS_V200A8 = 100;
 
-  // Invalid QR voice is intentionally rate-limited so a non-patrol QR held
-  // in front of the camera cannot speak continuously at the 10 FPS scan rate.
-  const INVALID_QR_VOICE_COOLDOWN_MS_V200A8 = 2500;
+  // Same invalid QR speaks once while it remains in view. After it leaves
+  // the frame for this gap, presenting it again may announce once more.
+  const INVALID_QR_REARM_GAP_MS_V200A9 = 1200;
 
   let availableRearCameras = [];
   let activeRearCameraIndex = -1;
@@ -650,7 +661,8 @@
   let qrCandidateLastSeenAtV200a7 = 0;
   let qrCandidateTimerV200a7 = null;
   let qrCandidateFinalizingV200a7 = false;
-  let lastInvalidQrVoiceAtV200a8 = 0;
+  let lastInvalidQrTextV200a9 = '';
+  let lastInvalidQrSeenAtV200a9 = 0;
 
   const SCANNER_BACK_STATE_KEY_V1113 =
     'scannerBackGuardV1113';
@@ -997,11 +1009,13 @@
         let score = 0;
 
         if (/back|rear|environment/.test(label)) score += 100;
-        if (/main|primary|standard/.test(label)) score += 60;
-        if (/\bwide\b/.test(label) && !/ultra/.test(label)) score += 15;
+        if (/main|primary|standard|\b1(?:[\.,]0+)?x\b/.test(label)) score += 70;
+        if (/\bwide\b/.test(label) && !/ultra/.test(label)) score += 20;
 
-        if (/ultra[\s-]?wide|ultrawide|0[\.,]5x?|macro|telephoto|depth/.test(label)) {
-          score -= 180;
+        if (
+          /ultra[\s-]?wide|ultrawide|macro|telephoto|tele|periscope|depth|\bzoom\b|(?:0[\.,]\d+|[2-9](?:[\.,]\d+)?)x\b/.test(label)
+        ) {
+          score -= 200;
         }
 
         if (/front|selfie|user/.test(label)) {
@@ -1013,8 +1027,7 @@
         return {
           camera: camera,
           label: label,
-          score: score,
-          originalIndex: index
+          score: score
         };
       });
 
@@ -1038,78 +1051,31 @@
   }
 
 
-  function loadRememberedCameraId_() {
-    try {
-      return String(localStorage.getItem(CAMERA_STORAGE_KEY) || '');
-    } catch (ignored) {
-      return '';
-    }
-  }
-
-
-  function rememberCameraId_(cameraId) {
-    try {
-      if (cameraId) {
-        localStorage.setItem(CAMERA_STORAGE_KEY, cameraId);
-      }
-    } catch (ignored) {}
-  }
-
-
-  function clearRememberedCameraIdV200a7_() {
-    try {
-      localStorage.removeItem(CAMERA_STORAGE_KEY);
-    } catch (ignored) {}
-  }
-
-
-  function loadRememberedZoom_() {
-    try {
-      const saved = Number(localStorage.getItem(ZOOM_STORAGE_KEY));
-      return Number.isFinite(saved) && saved > 0 ? saved : 1;
-    } catch (ignored) {
-      return 1;
-    }
-  }
-
-
-  function rememberZoom_(zoom) {
-    try {
-      localStorage.setItem(ZOOM_STORAGE_KEY, String(zoom));
-    } catch (ignored) {}
-  }
-
-
   async function getPreferredRearCamera_() {
     await loadRearCameras_();
 
-    // If a torch-capable main rear camera has already been proven on this
-    // device, reopen that exact physical camera every time.
-    const rememberedId = loadRememberedCameraId_();
+    // Prefer the best explicitly identified normal rear camera.
+    // If browser labels are not descriptive enough, fall back to the
+    // platform's normal environment-camera selection.
+    const candidate = availableRearCameras[0] || null;
+    const label = String(candidate && candidate.label || '').toLowerCase();
 
-    if (rememberedId && availableRearCameras.length) {
-      const selectedIndex =
-        availableRearCameras.findIndex(function(camera) {
-          return String(camera.id) === rememberedId;
-        });
-
-      if (selectedIndex >= 0) {
-        activeRearCameraIndex = selectedIndex;
-        activeCameraId = rememberedId;
-        return { deviceId: { exact: rememberedId } };
-      }
-
-      clearRememberedCameraIdV200a7_();
+    if (
+      candidate &&
+      candidate.id &&
+      /back|rear|environment|main|primary|standard|wide/.test(label) &&
+      !/front|selfie|user|ultra[\s-]?wide|ultrawide|macro|telephoto|tele|periscope|depth|\bzoom\b|(?:0[\.,]\d+|[2-9](?:[\.,]\d+)?)x\b/.test(label)
+    ) {
+      activeRearCameraIndex = 0;
+      activeCameraId = String(candidate.id);
+      return { deviceId: { exact: activeCameraId } };
     }
 
-    // First-use / no proven preferred camera: ask the browser for its normal
-    // environment camera instead of forcing an arbitrary enumerated rear lens.
-    // On modern phones this is normally the primary wide rear camera. Once its
-    // real torch capability is confirmed, its deviceId is persisted above.
     activeRearCameraIndex = -1;
     activeCameraId = '';
     return { facingMode: 'environment' };
   }
+
 
   function getRunningVideoTrackV200a2_() {
     try {
@@ -1213,27 +1179,9 @@
       torchEnabled = settings.torch;
     }
 
-    // The first rear camera that is proven torch-capable becomes the
-    // persistent startup camera. Once established, manual camera switching
-    // never overwrites this preferred-main choice.
-    if (torchSupported && activeCameraId) {
-      const rememberedId = loadRememberedCameraId_();
-
-      if (!rememberedId) {
-        rememberCameraId_(activeCameraId);
-      }
-    } else if (
-      activeCameraId &&
-      loadRememberedCameraId_() === activeCameraId &&
-      !torchSupported
-    ) {
-      // Do not keep a stale preferred-main ID if this physical camera no
-      // longer exposes real torch capability.
-      clearRememberedCameraIdV200a7_();
-    }
   }
 
-  async function applyPreferredZoom_() {
+  async function applyStartupZoom_() {
     await readCameraZoomCapability_();
 
     if (!zoomCapability) {
@@ -1242,11 +1190,9 @@
       return;
     }
 
-    let desired = loadRememberedZoom_();
-
-    desired = Math.min(
+    const desired = Math.min(
       zoomCapability.max,
-      Math.max(zoomCapability.min, desired)
+      Math.max(zoomCapability.min, 1)
     );
 
     currentZoom = desired;
@@ -1301,7 +1247,6 @@
       });
 
       currentZoom = nextZoom;
-      rememberZoom_(nextZoom);
       updateCameraControls_();
 
     } catch (ignored) {}
@@ -1388,6 +1333,13 @@
   }
 
 
+  function flashlightUnavailableMessage_() {
+    return availableRearCameras.length > 1
+      ? 'Flashlight unavailable. Switch camera.'
+      : 'Flashlight unavailable.';
+  }
+
+
   async function toggleTorch_() {
     if (!torchSupported || !scannerRunning) {
       return;
@@ -1402,7 +1354,7 @@
       torchFeatureV200a7 = null;
       updateCameraControls_();
       setMessage(
-        'Flashlight is not available on this camera.',
+        flashlightUnavailableMessage_(),
         'warn'
       );
       return;
@@ -1456,8 +1408,8 @@
     activeRearCameraIndex = nextIndex;
     activeCameraId = nextCameraId;
 
-    // Deliberately do NOT persist manual camera switching. The next scanner
-    // opening returns to the preferred main rear camera.
+    // Manual camera switching is temporary. The next scanner opening starts
+    // again from the normal/main rear-camera policy.
     await startScannerWithCamera_({
       deviceId: { exact: nextCameraId }
     });
@@ -1481,6 +1433,11 @@
       return;
     }
 
+    if (!scannerRunning) {
+      controls.classList.add('hidden');
+      return;
+    }
+
     const multipleRearCameras =
       availableRearCameras.length > 1;
 
@@ -1488,26 +1445,25 @@
       !!zoomCapability &&
       zoomCapability.max > zoomCapability.min;
 
-    const anyControlAvailable =
-      multipleRearCameras ||
-      zoomAvailable ||
-      torchSupported;
-
-    if (!anyControlAvailable) {
-      controls.classList.add('hidden');
-      return;
-    }
-
     controls.classList.remove('hidden');
 
     switchButton.disabled = !multipleRearCameras;
     switchButton.classList.toggle('hidden', !multipleRearCameras);
 
     torchButton.disabled = !torchSupported;
-    torchButton.classList.toggle('hidden', !torchSupported);
+    torchButton.classList.remove('hidden');
     torchButton.classList.toggle('is-on', !!torchEnabled);
+    torchButton.classList.toggle('is-unavailable', !torchSupported);
     torchButton.textContent = torchEnabled ? '💡' : '🔦';
-    torchButton.title = torchEnabled ? 'Turn flashlight off' : 'Turn flashlight on';
+
+    if (torchEnabled) {
+      torchButton.title = 'Turn flashlight off';
+    } else if (torchSupported) {
+      torchButton.title = 'Turn flashlight on';
+    } else {
+      torchButton.title = flashlightUnavailableMessage_();
+    }
+
     torchButton.setAttribute('aria-label', torchButton.title);
 
     zoomButton.disabled = !zoomAvailable;
@@ -1639,12 +1595,14 @@
       }
     } catch (ignored) {}
 
-    await applyPreferredZoom_();
+    await applyStartupZoom_();
     await requestScannerWakeLockV200a1_();
 
     setMessage(
-      'Align QR code within the frame.',
-      ''
+      torchSupported
+        ? 'Align QR code within the frame.'
+        : flashlightUnavailableMessage_(),
+      torchSupported ? '' : 'warn'
     );
 
     // Voice is handled at scanner entry or natural scanner interaction.
@@ -1730,18 +1688,27 @@
   }
 
 
-  function announceInvalidQrV200a8_() {
+  function announceInvalidQrV200a9_(decodedText) {
     const now = Date.now();
+    const qrText = String(decodedText || '');
 
-    if (
-      now - lastInvalidQrVoiceAtV200a8 <
-      INVALID_QR_VOICE_COOLDOWN_MS_V200A8
-    ) {
+    const sameQrStillInView =
+      qrText === lastInvalidQrTextV200a9 &&
+      now - lastInvalidQrSeenAtV200a9 <=
+        INVALID_QR_REARM_GAP_MS_V200A9;
+
+    lastInvalidQrTextV200a9 = qrText;
+    lastInvalidQrSeenAtV200a9 = now;
+
+    if (sameQrStillInView) {
       return;
     }
 
-    lastInvalidQrVoiceAtV200a8 = now;
-    speakScanner('Invalid patrol QR.');
+    speakScanner(
+      Number.isInteger(expected)
+        ? 'Invalid QR. Scan checkpoint ' + expected + '.'
+        : 'Invalid QR.'
+    );
   }
 
 
@@ -1899,7 +1866,7 @@
         'Invalid patrol QR. Scan the checkpoint QR.',
         'warn'
       );
-      announceInvalidQrV200a8_();
+      announceInvalidQrV200a9_(decodedText);
       return;
     }
 
