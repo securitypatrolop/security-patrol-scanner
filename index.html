@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 2.0.0.0alpha10 - Browser-Native Camera Control Refinement -->
+<!-- 2.0.0.0alpha10.1 - Camera Capability Diagnostic -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -352,6 +352,67 @@
     #torchButton.is-unavailable::before { transform:rotate(45deg); }
     #torchButton.is-unavailable::after { transform:rotate(-45deg); }
 
+    #cameraDiagnosticButton {
+      font-size:13px;
+      letter-spacing:.3px;
+    }
+
+    .camera-diagnostic-overlay {
+      position:fixed;
+      z-index:9998;
+      inset:0;
+      padding:calc(16px + var(--safe-top)) calc(14px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(14px + var(--safe-left));
+      display:flex;
+      align-items:flex-end;
+      justify-content:center;
+      background:rgba(2,13,22,.72);
+      backdrop-filter:blur(4px);
+    }
+
+    .camera-diagnostic-card {
+      width:min(100%,560px);
+      max-height:78dvh;
+      padding:14px;
+      border:1px solid rgba(190,220,240,.26);
+      border-radius:16px;
+      overflow:auto;
+      background:#08233b;
+      box-shadow:0 16px 40px rgba(0,0,0,.38);
+    }
+
+    .camera-diagnostic-head {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:10px;
+    }
+
+    .camera-diagnostic-title {
+      font-size:13px;
+      font-weight:950;
+      letter-spacing:.6px;
+    }
+
+    .camera-diagnostic-close {
+      min-width:64px;
+      min-height:34px;
+      padding:6px 10px;
+      border-radius:10px;
+      background:rgba(205,229,244,.14);
+      color:#fff;
+      font-size:11px;
+      font-weight:900;
+    }
+
+    .camera-diagnostic-output {
+      margin:0;
+      color:#d9edf9;
+      font:700 11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+    }
+
     #retryButton {
       min-height:48px;
       padding:10px 18px;
@@ -598,6 +659,15 @@
                   onclick="toggleZoom_()">
             1×
           </button>
+
+          <button id="cameraDiagnosticButton"
+                  class="camera-control"
+                  type="button"
+                  title="Camera diagnostics"
+                  aria-label="Camera diagnostics"
+                  onclick="openCameraDiagnosticV200A101_()">
+            INFO
+          </button>
         </div>
 
         <button id="retryButton"
@@ -609,7 +679,7 @@
       </div>
 
       <div class="small">
-        Keep the checkpoint QR inside the scan frame. · v2.0.0-alpha10
+        Keep the checkpoint QR inside the scan frame. · v2.0.0-alpha10.1
       </div>
     </div>
   </div>
@@ -622,6 +692,28 @@
   aria-live="polite"
 >
   Back is disabled while the checkpoint scanner is active.
+</div>
+
+<div
+  id="cameraDiagnosticOverlayV200A101"
+  class="camera-diagnostic-overlay hidden"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="cameraDiagnosticTitleV200A101"
+>
+  <div class="camera-diagnostic-card">
+    <div class="camera-diagnostic-head">
+      <div id="cameraDiagnosticTitleV200A101" class="camera-diagnostic-title">CAMERA CAPABILITY DIAGNOSTIC</div>
+      <button
+        class="camera-diagnostic-close"
+        type="button"
+        onclick="closeCameraDiagnosticV200A101_()"
+      >
+        CLOSE
+      </button>
+    </div>
+    <pre id="cameraDiagnosticOutputV200A101" class="camera-diagnostic-output">Collecting camera information...</pre>
+  </div>
 </div>
 
 <script>
@@ -662,6 +754,7 @@
 
   let availableRearCameras = [];
   let activeRearCameraIndex = -1;
+  let lastEnumeratedCamerasV200A101 = [];
   let currentZoom = 1;
   let zoomCapability = null;
   let torchFeatureV200a7 = null;
@@ -1016,6 +1109,8 @@
       cameras = [];
     }
 
+    lastEnumeratedCamerasV200A101 = cameras.slice();
+
     // Camera labels become available after permission on normal mobile
     // browsers. Only remove cameras explicitly identified as front-facing.
     // Preserve the browser's device order; do not guess lens type from labels.
@@ -1030,6 +1125,116 @@
         : cameras.slice();
 
     return availableRearCameras;
+  }
+
+
+  function shortCameraIdV200A101_(value) {
+    const text = String(value || '');
+    if (!text) return 'none';
+    return text.length <= 12
+      ? text
+      : text.slice(0, 5) + '…' + text.slice(-5);
+  }
+
+
+  function buildCameraDiagnosticV200A101_() {
+    const lines = [
+      'SCANNER: v2.0.0-alpha10.1',
+      'EXPOSED INPUTS: ' + lastEnumeratedCamerasV200A101.length,
+      'REAR CANDIDATES: ' + availableRearCameras.length,
+      'CHANGE CAMERA: ' + (availableRearCameras.length > 1 ? 'AVAILABLE' : 'NOT AVAILABLE')
+    ];
+
+    let settings = null;
+    let capabilities = null;
+
+    try {
+      settings = scanner && scannerRunning
+        ? scanner.getRunningTrackSettings()
+        : null;
+    } catch (ignored) {}
+
+    try {
+      capabilities = scanner && scannerRunning
+        ? scanner.getRunningTrackCapabilities()
+        : null;
+    } catch (ignored) {}
+
+    const activeDeviceId =
+      settings && settings.deviceId
+        ? String(settings.deviceId)
+        : '';
+
+    const activeRawIndex =
+      lastEnumeratedCamerasV200A101.findIndex(function(camera) {
+        return String(camera && camera.id || '') === activeDeviceId;
+      });
+
+    const activeLabel =
+      activeRawIndex >= 0
+        ? String(lastEnumeratedCamerasV200A101[activeRawIndex].label || '(unlabelled)')
+        : '(unmatched)';
+
+    lines.push(
+      '',
+      'ACTIVE INDEX: ' + (activeRawIndex >= 0 ? String(activeRawIndex + 1) : 'unmatched'),
+      'ACTIVE LABEL: ' + activeLabel,
+      'ACTIVE ID: ' + shortCameraIdV200A101_(activeDeviceId),
+      'FACING MODE: ' + String(settings && settings.facingMode || 'unknown'),
+      'RESOLUTION: ' + (
+        settings && settings.width && settings.height
+          ? settings.width + ' × ' + settings.height
+          : 'unknown'
+      ),
+      'FRAME RATE: ' + String(settings && settings.frameRate || 'unknown'),
+      'CURRENT ZOOM: ' + String(
+        settings && typeof settings.zoom === 'number'
+          ? settings.zoom
+          : currentZoom
+      ),
+      'ZOOM RANGE: ' + (
+        capabilities && capabilities.zoom
+          ? capabilities.zoom.min + ' – ' + capabilities.zoom.max
+          : 'not exposed'
+      ),
+      'TORCH: ' + (torchSupported ? 'SUPPORTED' : 'NOT SUPPORTED'),
+      '',
+      'EXPOSED CAMERA LIST:'
+    );
+
+    if (!lastEnumeratedCamerasV200A101.length) {
+      lines.push('  (none exposed)');
+    } else {
+      lastEnumeratedCamerasV200A101.forEach(function(camera, index) {
+        const id = String(camera && camera.id || '');
+        const label = String(camera && camera.label || '(unlabelled)');
+        const active = id && id === activeDeviceId ? '  ← ACTIVE' : '';
+        lines.push(
+          '  ' + (index + 1) + '. ' + label +
+          ' [' + shortCameraIdV200A101_(id) + ']' +
+          active
+        );
+      });
+    }
+
+    return lines.join('\n');
+  }
+
+
+  function openCameraDiagnosticV200A101_() {
+    const overlay = document.getElementById('cameraDiagnosticOverlayV200A101');
+    const output = document.getElementById('cameraDiagnosticOutputV200A101');
+
+    if (!overlay || !output) return;
+
+    output.textContent = buildCameraDiagnosticV200A101_();
+    overlay.classList.remove('hidden');
+  }
+
+
+  function closeCameraDiagnosticV200A101_() {
+    const overlay = document.getElementById('cameraDiagnosticOverlayV200A101');
+    if (overlay) overlay.classList.add('hidden');
   }
 
 
@@ -1369,7 +1574,10 @@
     const zoomButton =
       document.getElementById('zoomButton');
 
-    if (!controls || !switchButton || !torchButton || !zoomButton) {
+    const diagnosticButton =
+      document.getElementById('cameraDiagnosticButton');
+
+    if (!controls || !switchButton || !torchButton || !zoomButton || !diagnosticButton) {
       return;
     }
 
@@ -1420,6 +1628,9 @@
         'Camera zoom ' + zoomButton.textContent;
       zoomButton.setAttribute('aria-label', zoomButton.title);
     }
+
+    diagnosticButton.disabled = false;
+    diagnosticButton.classList.remove('hidden');
   }
 
 
